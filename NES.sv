@@ -99,19 +99,20 @@ module emu
 	input   [5:0] USER_IN,
 	output  [5:0] USER_OUT,
 
+	output        OSD_TRIGGER,
 	input         OSD_STATUS
 );
 
 assign ADC_BUS  = 'Z;
-assign USER_OUT = '1;
+//assign USER_OUT = '1;
 
 assign AUDIO_S   = 1'b1;
 assign AUDIO_L   = |mute_cnt ? 16'd0 : sample_signed[15:0];
 assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
-assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]);
-assign LED_DISK  = 0;
+assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]) | llio_en;
+assign LED_DISK  = |llio_buttons;
 assign LED_POWER = 0;
 
 assign VIDEO_ARX = status[8] ? 8'd16 : (hide_overscan ? 8'd64 : 8'd128);
@@ -131,7 +132,7 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 // 0         1         2         3 
 // 01234567890123456789012345678901
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV
-//  XXXXXXXXXX XXXXXXXXXXXXX     XX
+//  XXXXXXXXXXXXXXXXXXXXXXXX     XX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -159,6 +160,7 @@ parameter CONF_STR = {
 	"OCF,Palette,Smooth,Unsat.,FCEUX,NES Classic,Composite,PC-10,PVM,Wavebeam,Real,Sony CXA,YUV,Greyscale,Rockman9,Nintendulator;",
 	"-;",
 	"O9,Swap Joysticks,No,Yes;",
+	"OB,Serial Input,Off,LLAPI;",
 	"OIJ,Peripheral,Powerpad,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2);",
 	"OL,Zapper Trigger,Mouse,Joystick;",
 	"OM,Crosshairs,On,Off;",
@@ -336,7 +338,7 @@ reg   [1:0] last_joypad_clock;
 
 wire [11:0] powerpad = joyA[22:11] | joyB[22:11] | joyC[22:11] | joyD[22:11];
 
-wire [7:0] nes_joy_A = { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
+wire [7:0] nes_joy_A = use_llio ? joy_ll_a : { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
 wire [7:0] nes_joy_B = { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], joyB[4] };
 wire [7:0] nes_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], joyC[4] };
 wire [7:0] nes_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], joyD[4] };
@@ -376,6 +378,57 @@ zapper zap (
 	.light(light),
 	.trigger(trigger)
 );
+
+wire [31:0] llio_buttons;
+wire [71:0] llio_analog;
+wire [7:0]  llio_type;
+wire llio_en;
+
+LLIO llio
+(
+	.CLK_50M(CLK_50M),
+	.LLIO_SYNC(vblank),
+	.IO_LATCH_IN(USER_IN[0]),
+	.IO_LATCH_OUT(USER_OUT[0]),
+	.IO_DATA_IN(USER_IN[1]),
+	.IO_DATA_OUT(USER_OUT[1]),
+	.ENABLE(status[11] & ~OSD_STATUS),
+	.LLIO_BUTTONS(llio_buttons),
+	.LLIO_ANALOG(llio_analog),
+	.LLIO_TYPE(llio_type),
+	.LLIO_EN(llio_en)
+);
+
+wire use_llio = llio_en && status[11];
+wire use_llio_gun = use_llio && llio_type == 8'd28;
+// Indexes:
+// 0 = D+    = P1 Latch
+// 1 = D-    = P1 Data
+// 2 = TX-   = LLAPI Enable
+// 3 = GND_d = N/C
+// 4 = RX+   = P2 Latch
+// 5 = RX-   = P2 Data
+
+assign USER_OUT[2] = ~(status[11] & ~OSD_STATUS);
+assign USER_OUT[3] = 1;
+assign USER_OUT[4] = 1;
+assign USER_OUT[5] = 1;
+
+// 0 - A
+// 1 - B
+// 2 - Select
+// 3 - Start
+// 4 - Up
+// 5 - Down
+// 6 - Left
+// 7 - Right
+wire [7:0] joy_ll_a = use_llio_gun ? 8'd0 : {
+	llio_buttons[24], llio_buttons[25], llio_buttons[26], llio_buttons[27],
+	llio_buttons[5], llio_buttons[4], llio_buttons[0], llio_buttons[1]
+};
+
+assign OSD_TRIGGER = llio_buttons[4] & llio_buttons[5];
+
 
 always @(posedge clk) begin
 	if (reset_nes) begin
@@ -455,6 +508,9 @@ reg [1:0] diskside;
 
 wire lightgun_en = |status[19:18];
 
+wire D4_in = use_llio_gun ? llio_buttons[0] : (lightgun_en ? trigger : powerpad_d4[0]);
+wire D3_in = use_llio_gun ? ~llio_buttons[1]: (lightgun_en ? light : powerpad_d3[0]);
+
 NES nes (
 	.clk             (clk),
 	.reset_nes       (reset_nes),
@@ -479,7 +535,7 @@ NES nes (
 	// User Input
 	.joypad_strobe   (joypad_strobe),
 	.joypad_clock    (joypad_clock),
-	.joypad_data     ({lightgun_en ? trigger : powerpad_d4[0],lightgun_en ? light : powerpad_d3[0],joypad_bits2[0],joypad_bits[0]}),
+	.joypad_data     ({D4_in, D3_in, joypad_bits2[0], joypad_bits[0]}),
 	.mic             (mic),
 	.diskside_req    (diskside_req),
 	.diskside        (diskside),
@@ -640,6 +696,7 @@ assign VGA_SL = sl[1:0];
 
 wire [1:0] reticle;
 wire hold_reset;
+wire vblank;
 
 video video
 (
@@ -655,7 +712,7 @@ video video
 	.palette(palette2_osd),
 	.emphasis(emphasis),
 	.reticle(~status[22] ? reticle : 2'b00),
-
+	.vblank_out(vblank),
 	.ce_pix(CE_PIXEL)
 );
 
