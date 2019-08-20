@@ -5,6 +5,7 @@ module video
 (
 	input        clk,
 	input        reset,
+	input  [1:0] cnt,
 	input  [5:0] color,
 	input  [8:0] count_h,
 	input  [8:0] count_v,
@@ -14,6 +15,7 @@ module video
 	input  [3:0] palette,
 	input  [2:0] emphasis,
 	input  [1:0] reticle,
+	input        pal_video,
 
 	output       vblank_out,
 
@@ -32,8 +34,6 @@ reg pix_ce, pix_ce_n;
 wire [5:0] color_ef = reticle[0] ? (reticle[1] ? 6'h21 : 6'h15) : is_padding ? 6'd63 : color;
 
 always @(negedge clk) begin
-	reg [1:0] cnt = 0;
-	cnt <= cnt + 1'd1;
 	pix_ce   <= ~cnt[1] & ~cnt[0];
 	pix_ce_n <=  cnt[1] & ~cnt[0];
 end
@@ -242,6 +242,7 @@ reg  [9:0] h, v;
 reg  [1:0] free_sync = 0;
 wire [9:0] hc = (&free_sync | reset) ? h : count_h;
 wire [9:0] vc = (&free_sync | reset) ? v : count_v;
+wire [9:0] vsync_start = (pal_video ? 10'd270 : 10'd244);
 
 always @(posedge clk) begin
 	reg [8:0] old_count_v;
@@ -258,7 +259,7 @@ always @(posedge clk) begin
 		end else begin
 			if(h == 340) begin
 				h <= 0;
-				if(v == 261) begin
+				if(v == (pal_video ? 311 : 261)) begin
 					v <= 0;
 					if(~&free_sync) free_sync <= free_sync + 1'd1;
 				end else begin
@@ -289,7 +290,7 @@ always @(posedge clk) begin
 			VBlank <= (vc >= VBL_START);                                   // 240 lines
 		end
 		HSync  <= ((hc >= 278) && (hc < 304));
-		VSync  <= ((vc >= 244) && (vc < 247));
+		VSync  <= ((vc >= vsync_start) && (vc < vsync_start+3));
 	end
 end
 

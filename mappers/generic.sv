@@ -22,7 +22,7 @@ module MMC0(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -75,7 +75,7 @@ module Mapper13(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -137,7 +137,7 @@ module Mapper30(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -195,13 +195,16 @@ assign vram_ce = chr_ain[13] && !four_screen;
 endmodule
 
 
-// 11 - Color Dreams
-// 38 - Bit Corps
-// 86 - Jaleco JF-13 -- no audio samples
-// 87 - Jaleco JF-11,JF-14
+// 11  - Color Dreams
+// 38  - Bit Corps
+// 46  - RumbleStation 15-in-1
+// 86  - Jaleco JF-13 -- no audio samples
+// 87  - Jaleco JF-11,JF-14
 // 101 - Jaleco JF-11,JF-14
 // 140 - Jaleco JF-11,JF-14
-// 66 - GxROM
+// 66  - GxROM
+// 145 - Sachen
+// 149 - Sachen
 module Mapper66(
 	input        clk,         // System clock
 	input        ce,          // M2 ~cpu_clk
@@ -223,7 +226,7 @@ module Mapper66(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -242,18 +245,21 @@ wire prg_allow;
 wire chr_allow;
 wire vram_a10;
 wire vram_ce;
-reg [15:0] flags_out = 0;
+wire [15:0] flags_out = {13'h0, prg_conflict, 2'b00};
 
 
-reg [1:0] prg_bank;
-reg [3:0] chr_bank;
+reg [4:0] prg_bank;
+reg [6:0] chr_bank;
 wire [7:0] mapper = flags[7:0];
 wire GXROM = (mapper == 66);
 wire BitCorps = (mapper == 38);
 wire Mapper140 = (mapper == 140);
 wire Mapper101 = (mapper == 101);
+wire Mapper46 = (mapper == 46);
 wire Mapper86 = (mapper == 86);
 wire Mapper87 = (mapper == 87);
+wire Mapper145 = (mapper == 145);
+wire Mapper149 = (mapper == 149);
 
 always @(posedge clk)
 if (~enable) begin
@@ -262,30 +268,40 @@ if (~enable) begin
 end else if (ce) begin
 	if (prg_ain[15] & prg_write) begin
 		if (GXROM)
-			{prg_bank, chr_bank} <= {prg_din[5:4], 2'b0, prg_din[1:0]};
+			{prg_bank, chr_bank} <= {3'b0, prg_din[5:4], 5'b0, prg_din[1:0]};
+		else if (Mapper149)
+			{chr_bank} <= {6'b0, prg_din[7]};
+		else if (Mapper46)
+			{chr_bank[2:0], prg_bank[0]} <= {prg_din[6:4], prg_din[0]};
 		else // Color Dreams
-			{chr_bank, prg_bank} <= {prg_din[7:4], prg_din[1:0]};
+			{chr_bank, prg_bank} <= {3'b0, prg_din[7:4], 3'b0, prg_din[1:0]};
 	end else if ((prg_ain[15:12]==4'h7) & prg_write & BitCorps) begin
-		{chr_bank, prg_bank} <= {prg_din[3:0]};
+		{chr_bank, prg_bank} <= {3'b0, prg_din[3:0]};
 	end else if ((prg_ain[15:12]==4'h6) & prg_write) begin
 		if (Mapper140) begin
-			{prg_bank, chr_bank} <= {prg_din[5:4], prg_din[3:0]};
+			{prg_bank, chr_bank} <= {3'b0, prg_din[5:4], 3'b0, prg_din[3:0]};
+		end else if (Mapper46) begin
+			{chr_bank[6:3], prg_bank[4:1]} <= {prg_din[7:4], prg_din[3:0]};
 		end else if (Mapper101) begin
-			{chr_bank} <= {prg_din[3:0]}; // All 8 bits instead?
+			{chr_bank} <= {3'b0, prg_din[3:0]}; // All 8 bits instead?
 		end else if (Mapper87) begin
-			{chr_bank} <= {2'b00, prg_din[0], prg_din[1]};
+			{chr_bank} <= {5'b00, prg_din[0], prg_din[1]};
 		end else if (Mapper86) begin
-			{prg_bank, chr_bank} <= {prg_din[5:4], 1'b0, prg_din[6], prg_din[1:0]};
+			{prg_bank, chr_bank} <= {3'b0, prg_din[5:4], 4'b0, prg_din[6], prg_din[1:0]};
 		end
+	end else if ((prg_ain[15:8]==8'h41) & prg_write) begin
+		if (Mapper145)
+			{chr_bank} <= {6'b0, prg_din[7]};
 	end
 end
 
-assign prg_aout = {5'b00_000, prg_bank, prg_ain[14:0]};
+assign prg_aout = {2'b00, prg_bank, prg_ain[14:0]};
 assign prg_allow = prg_ain[15] && !prg_write;
 assign chr_allow = flags[15];
-assign chr_aout = {5'b10_000, chr_bank, chr_ain[12:0]};
+assign chr_aout = {2'b10, chr_bank, chr_ain[12:0]};
 assign vram_ce = chr_ain[13];
 assign vram_a10 = flags[14] ? chr_ain[10] : chr_ain[11];
+wire prg_conflict = prg_ain[15] && (Mapper149);
 
 endmodule
 
@@ -312,7 +328,7 @@ module Mapper34(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -394,7 +410,7 @@ module Mapper71(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -476,7 +492,7 @@ module Mapper77(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -549,7 +565,7 @@ module Mapper78(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -615,6 +631,7 @@ assign vram_a10 = vram_a10_t;
 endmodule
 
 // #79,#113 - NINA-03 / NINA-06
+// #133,#146,#148 - Sachen
 module Mapper79(
 	input        clk,         // System clock
 	input        ce,          // M2 ~cpu_clk
@@ -636,7 +653,7 @@ module Mapper79(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -655,12 +672,14 @@ wire prg_allow;
 wire chr_allow;
 wire vram_a10;
 wire vram_ce;
-reg [15:0] flags_out = 0;
+wire [15:0] flags_out = {13'h0, prg_conflict, 2'b00};
 
 reg [2:0] prg_bank;
 reg [3:0] chr_bank;
 reg mirroring;  // 0: Horizontal, 1: Vertical
 wire mapper113 = (flags[7:0] == 113); // NINA-06
+wire mapper133 = (flags[7:0] == 133);
+wire mapper148 = (flags[7:0] == 148);
 
 always @(posedge clk)
 if (~enable) begin
@@ -669,7 +688,13 @@ if (~enable) begin
 	mirroring <= 0;
 end else if (ce) begin
 	if (prg_ain[15:13] == 3'b010 && prg_ain[8] && prg_write)
-		{mirroring, chr_bank[3], prg_bank, chr_bank[2:0]} <= prg_din;
+		if (mapper133)
+			{mirroring, chr_bank[3], prg_bank, chr_bank[2:0]} <= {4'h0,prg_din[2],1'b0,prg_din[1:0]};
+		else
+			{mirroring, chr_bank[3], prg_bank, chr_bank[2:0]} <= prg_din;
+	if (prg_ain[15] == 1'b1 && prg_write)
+		if (mapper148)
+			{mirroring, chr_bank[3], prg_bank, chr_bank[2:0]} <= prg_din;
 end
 
 assign prg_aout = {4'b00_00, prg_bank, prg_ain[14:0]};
@@ -679,6 +704,7 @@ assign chr_aout = {5'b10_000, chr_bank, chr_ain[12:0]};
 assign vram_ce = chr_ain[13];
 wire mirrconfig = mapper113 ? mirroring : flags[14]; // Mapper #13 has mapper controlled mirroring
 assign vram_a10 = mirrconfig ? chr_ain[10] : chr_ain[11]; // 0: horiz, 1: vert
+wire prg_conflict = prg_ain[15] && mapper148;
 
 endmodule
 
@@ -705,7 +731,7 @@ module Mapper89(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -811,7 +837,7 @@ module Mapper107(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -880,7 +906,7 @@ module Mapper28(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_open_bus, has_chr_dout}
+	inout [15:0] flags_out_b  // flags {0, 0, 0, 0, 0, prg_conflict, prg_bus_write, has_chr_dout}
 );
 
 assign prg_aout_b   = enable ? prg_aout : 22'hZ;
@@ -901,9 +927,9 @@ wire chr_allow;
 reg vram_a10;
 reg [7:0] chr_dout;
 wire vram_ce;
-wire [15:0] flags_out = {13'h0, prg_conflict, prg_open_bus, has_chr_dout};
+wire [15:0] flags_out = {13'h0, prg_conflict, 1'b0, has_chr_dout};
 
-wire prg_open_bus, prg_conflict, has_chr_dout;
+wire prg_conflict, has_chr_dout;
 
 reg [6:0] a53prg;    // output PRG ROM (A14-A20 on ROM)
 reg [1:0] a53chr;    // output CHR RAM (A13-A14 on RAM)
@@ -1019,7 +1045,6 @@ assign vram_ce = chr_ain[13];
 assign prg_aout = {1'b0, (a53prg & 7'b0011111), prg_ain[13:0]};
 assign prg_allow = prg_ain[15] && !prg_write;
 assign prg_conflict = prg_ain[15] && (mapper == 3) && (submapper != 1);
-assign prg_open_bus = (prg_ain[15:13] == 3'b011) && (mapper == 7);
 assign chr_allow = flags[15];
 assign chr_aout = {7'b10_0000_0, a53chr, chr_ain[12:0]};
 wire [4:0] submapper = flags[24:21];

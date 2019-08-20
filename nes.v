@@ -37,7 +37,6 @@ module DmaController(
 	output pause_cpu               // CPU is pausede
 );
 
-// XXX: OAM DMA appears to be 1 cycle too short
 reg dmc_state;
 reg [1:0] spr_state;
 reg [7:0] sprite_dma_lastval;
@@ -70,59 +69,11 @@ assign aout = dmc_ack ? dmc_dma_addr : !odd_cycle ? sprite_dma_addr : 16'h2004;
 
 endmodule
 
-// Multiplexes accesses by the PPU and the PRG into a single memory, used for both
-// ROM and internal memory.
-// PPU has priority, its read/write will be honored asap, while the CPU's reads
-// will happen only every second cycle when the PPU is idle.
-// Data read by PPU will be available on the next clock cycle.
-// Data read by CPU will be available within at most 2 clock cycles.
-
-module MemoryMultiplex(
-	input clk,
-	input ce,
-	input reset,
-	input [21:0] prg_addr,
-	input prg_read,
-	input prg_write,
-	input [7:0] prg_din,
-	input [21:0] chr_addr,
-	input chr_read,
-	input chr_write,
-	input [7:0] chr_din,
-	// Access signals for the SRAM.
-	output [21:0] memory_addr,   // address to access
-	output memory_read_cpu,      // read into CPU latch
-	output memory_read_ppu,      // read into PPU latch
-	output memory_write,         // is a write operation
-	output [7:0] memory_dout
-);
-
-reg saved_prg_read, saved_prg_write;
-assign memory_addr = (chr_read || chr_write) ? chr_addr : prg_addr;
-assign memory_write = (chr_read || chr_write) ? chr_write : saved_prg_write;
-assign memory_read_ppu = chr_read;
-assign memory_read_cpu = !(chr_read || chr_write) && (prg_read || saved_prg_read);
-assign memory_dout = chr_write ? chr_din : prg_din;
-always @(posedge clk) if (reset) begin
-	saved_prg_read <= 0;
-	saved_prg_write <= 0;
-end else if (ce) begin
-	if (chr_read || chr_write) begin
-		saved_prg_read <= prg_read || saved_prg_read;
-		saved_prg_write <= prg_write || saved_prg_write;
-	end else begin
-		saved_prg_read <= 0;
-		saved_prg_write <= prg_write;
-	end
-end
-
-endmodule
-
 module NES(
 	input         clk,
-	input         reset_nes,
+	input         reset,
 	input   [1:0] sys_type,
-	output  [2:0] nes_div,
+	output  [1:0] nes_div,
 	input  [31:0] mapper_flags,
 	output [15:0] sample,         // sample generated from APU
 	output  [5:0] color,          // pixel generated from PPU
@@ -135,18 +86,23 @@ module NES(
 	output  [1:0] diskside_req,
 	input   [1:0] diskside,
 	input   [4:0] audio_channels, // Enabled audio channels
+	input         ex_sprites,
+	input   [1:0] mask,
 
-	// Access signals for the SRAM.
-	output [21:0] memory_addr,    // address to access
-	output        memory_read_cpu,// read into CPU latch
-	input   [7:0] memory_din_cpu, // next cycle, contents of latch A (CPU's data)
-	output        memory_read_ppu,// read into CPU latch
-	input   [7:0] memory_din_ppu, // next cycle, contents of latch B (PPU's data)
-	output        memory_write,   // is a write operation
-	output  [7:0] memory_dout,
+	// Access signals for the SDRAM.
+	output [21:0] cpumem_addr,
+	output        cpumem_read,
+	output        cpumem_write,
+	output  [7:0] cpumem_dout,
+	input   [7:0] cpumem_din,
+	output [21:0] ppumem_addr,
+	output        ppumem_read,
+	output        ppumem_write,
+	output  [7:0] ppumem_dout,
+	input   [7:0] ppumem_din,
 
 	// Override for BRAM
-	output [15:0] bram_addr,      // address to access
+	output [17:0] bram_addr,      // address to access
 	input   [7:0] bram_din,       // Data from BRAM
 	output  [7:0] bram_dout,
 	output        bram_write,     // is a write operation
@@ -200,8 +156,6 @@ module NES(
 assign nes_div = div_sys;
 assign apu_ce = cpu_ce;
 
-wire reset = reset_nes | (last_sys_type != sys_type);
-
 wire [7:0] from_data_bus;
 wire [7:0] cpu_dout;
 
@@ -209,7 +163,6 @@ wire [7:0] cpu_dout;
 // master cycles and low for 6 master cycles. It is considered active when low or "even".
 reg odd_or_even = 0; // 1 == odd, 0 == even
 
-// XXX: Because we are using div4 clock divider for PAL, master clock should be 21.2813696
 // Clock Dividers
 wire [4:0] div_cpu_n = 5'd12;
 wire [2:0] div_ppu_n = 3'd4; 
@@ -249,9 +202,9 @@ wire skip_ppu_cycle = (cpu_tick_count == 4) && (ppu_tick == 0);
 always @(posedge clk) begin
 	if (~freeze_clocks | ~(div_ppu == (div_ppu_n - 1'b1))) begin
 		if (~skip_ppu_cycle)
-			div_cpu <= cpu_ce || (ppu_ce && div_cpu > div_cpu_n) ? 1'b1 : div_cpu + 1'b1;
+			div_cpu <= cpu_ce || (ppu_ce && div_cpu > div_cpu_n) ? 5'd1 : div_cpu + 5'd1;
 
-		div_ppu <= ppu_ce ? 1'b1 : div_ppu + 1'b1;
+		div_ppu <= ppu_ce ? 3'd1 : div_ppu + 3'd1;
 
 		// reset the ticker on the first ppu tick at or after a cpu tick.
 		if (cpu_ce)
@@ -372,7 +325,7 @@ wire [15:0] sample_apu;
 APU apu(
 	.MMC5           (1'b0),
 	.clk            (clk),
-	.PAL            (sys_type[1]),
+	.PAL            (sys_type[0]),
 	.ce             (cpu_ce),
 	.reset          (reset),
 	.ADDR           (addr[4:0]),
@@ -410,7 +363,15 @@ wire [15:0] audio_mappers = (audio_en == 2'd1) ? 16'd0 : sample_inverted;
 // Joypads are mapped into the APU's range.
 wire joypad1_cs = (addr == 'h4016);
 wire joypad2_cs = (addr == 'h4017);
-assign joypad_strobe = (joypad1_cs && mw_int && cpu_dout[0]);
+
+reg joy_strobe;
+
+always @(posedge clk) begin
+	if (joypad1_cs && mw_int)
+		joy_strobe <= cpu_dout[0];
+end
+
+assign joypad_strobe = joy_strobe;
 assign joypad_clock = {joypad2_cs && mr_int, joypad1_cs && mr_int};
 
 
@@ -427,8 +388,8 @@ wire mr_ppu     = mr_int && ppu_io; // Read *from* the PPU.
 wire mw_ppu     = mw_int && ppu_io; // Write *to* the PPU.
 wire ppu_cs = addr >= 'h2000 && addr < 'h4000;
 wire [7:0] ppu_dout;            // Data from PPU to CPU
-wire chr_read, chr_write;       // If PPU reads/writes from VRAM
-wire [13:0] chr_addr;           // Address PPU accesses in VRAM
+wire chr_read, chr_write, chr_read_ex;       // If PPU reads/writes from VRAM
+wire [13:0] chr_addr, chr_addr_ex;           // Address PPU accesses in VRAM
 wire [7:0] chr_from_ppu;        // Data from PPU to VRAM
 wire [7:0] chr_to_ppu;
 wire [19:0] mapper_ppu_flags;   // PPU flags for mapper cheating
@@ -450,15 +411,19 @@ PPU ppu(
 	.pre_read         (ppu_fetch & mr_int & ppu_cs),
 	.pre_write        (ppu_fetch & mw_int & ppu_cs),
 	.vram_r           (chr_read),
+	.vram_r_ex        (chr_read_ex),
 	.vram_w           (chr_write),
 	.vram_a           (chr_addr),
+	.vram_a_ex        (chr_addr_ex),
 	.vram_din         (chr_to_ppu),
 	.vram_dout        (chr_from_ppu),
 	.scanline         (scanline),
 	.cycle            (ppu_cycle),
 	.mapper_ppu_flags (mapper_ppu_flags),
 	.emphasis         (emphasis),
-	.short_frame      (skip_pixel)
+	.short_frame      (skip_pixel),
+	.extra_sprites    (ex_sprites),
+	.mask             (mask)
 );
 
 
@@ -467,12 +432,12 @@ PPU ppu(
 /**********************************************************/
 
 wire [15:0] prg_addr = addr;
-wire [7:0] prg_din = dbus & (prg_conflict ? memory_din_cpu : 8'hFF);
+wire [7:0] prg_din = dbus & (prg_conflict ? cpumem_din : 8'hFF);
 
 wire prg_read  = mr_int && cart_pre && !apu_cs && !ppu_cs;
 wire prg_write = mw_int && cart_pre && !apu_cs && !ppu_cs;
 
-wire prg_allow, prg_open_bus, prg_conflict, vram_a10, vram_ce, chr_allow;
+wire prg_allow, prg_bus_write, prg_conflict, vram_a10, vram_ce, chr_allow;
 wire [21:0] prg_linaddr, chr_linaddr;
 wire [7:0] prg_dout_mapper, chr_from_ppu_mapper;
 wire has_chr_from_ppu_mapper;
@@ -492,7 +457,9 @@ cart_top multi_mapper (
 	.prg_write         (prg_write),               // CPU RnW split
 	.prg_din           (prg_din),                 // CPU Data bus in (split from bid)
 	.prg_dout          (prg_dout_mapper),         // CPU Data bus out (split from bid)
-	.chr_ain           (chr_addr),                // PPU address in
+	.chr_ex            (chr_read_ex),             // Flag indicating to use extra sprite addr
+	.chr_ain_orig      (chr_addr),                // PPU address in
+	.chr_ain_ex        (chr_addr_ex),             // PPU address for extra sprites
 	.chr_read          (chr_read),                // PPU read (inverted, active high)
 	.chr_write         (chr_write),               // PPU write (inverted, active high)
 	.chr_din           (chr_from_ppu),            // PPU data bus in (split from bid)
@@ -519,7 +486,7 @@ cart_top multi_mapper (
 	.ppu_ce            (ppu_ce),                  // PPU Clock (cheat for MMC5/2/4)
 	// Behavior helper flags
 	.has_chr_dout      (has_chr_from_ppu_mapper), // Output specific data for CHR rather than from SDRAM
-	.prg_open_bus      (prg_open_bus),            // Simulate open bus
+	.prg_bus_write     (prg_bus_write),           // PRG data driven to bus
 	.prg_conflict      (prg_conflict),            // Simulate bus conflicts
 	// User input/FDS controls
 	.fds_eject         (fds_eject),               // Used to trigger FDS disk changes
@@ -536,7 +503,7 @@ CODES codes (
 	.reset      (gg_reset),
 	.enable     (~gg),
 	.addr_in    (addr),
-	.data_in    (prg_allow ? memory_din_cpu : prg_dout_mapper),
+	.data_in    (prg_allow ? cpumem_din : prg_dout_mapper),
 	.code       (gg_code),
 	.available  (gg_avail),
 	.genie_ovr  (genie_ovr),
@@ -548,30 +515,17 @@ CODES codes (
 /*************       Bus Arbitration        ***************/
 /**********************************************************/
 
-assign chr_to_ppu = has_chr_from_ppu_mapper ? chr_from_ppu_mapper : memory_din_ppu;
+assign chr_to_ppu = has_chr_from_ppu_mapper ? chr_from_ppu_mapper : ppumem_din;
 
-MemoryMultiplex mem(
-	.clk             (clk),
-	.ce              (ppu_ce),
-	.reset           (reset),
-	.prg_addr        (prg_linaddr),
-	.prg_read        ((prg_read & prg_allow) | (prg_write && prg_conflict)),
-	.prg_write       (prg_write && prg_allow),
-	.prg_din         (prg_din),
-	.chr_addr        (chr_linaddr),
-	.chr_read        (chr_read),
-	.chr_write       (chr_write && (chr_allow || vram_ce)),
-	.chr_din         (chr_from_ppu),
-	.memory_addr     (memory_addr),
-	.memory_read_cpu (memory_read_cpu),
-	.memory_read_ppu (memory_read_ppu),
-	.memory_write    (memory_write),
-	.memory_dout     (memory_dout)
-);
+assign cpumem_addr  = prg_linaddr;
+assign cpumem_read  = (prg_read & prg_allow) | (prg_write && prg_conflict);
+assign cpumem_write = prg_write && prg_allow;
+assign cpumem_dout  = prg_din;
+assign ppumem_addr  = chr_linaddr;
+assign ppumem_read  = chr_read;
+assign ppumem_write = chr_write && (chr_allow || vram_ce);
+assign ppumem_dout  = chr_from_ppu;
 
-// These registers are open bus if FDS is not in use
-// Some games hacks (Super Mario All-Stars) rely on this behavior
-wire bus_is_open = (mapper_flags[7:0] == 8'd20) ? 1'b0 : (addr >= 16'h4018 && addr < 16'h4100);
 reg [7:0] open_bus_data;
 
 always @(posedge clk) begin
@@ -592,16 +546,14 @@ always @* begin
 			raw_data_bus = {open_bus_data[7:5], joypad_data[3:2], 2'b00, joypad_data[1]};
 		else
 			raw_data_bus = (addr == 16'h4015) ? apu_dout : open_bus_data;
-	end else if (bus_is_open) begin
-		raw_data_bus = open_bus_data;
 	end else if (ppu_cs) begin
 		raw_data_bus = ppu_dout;
 	end else if (prg_allow) begin
-		raw_data_bus = memory_din_cpu;
-	end else if (prg_open_bus) begin
-		raw_data_bus = open_bus_data;
-	end else begin
+		raw_data_bus = cpumem_din;
+	end else if (prg_bus_write) begin
 		raw_data_bus = prg_dout_mapper;
+	end else begin
+		raw_data_bus = open_bus_data;
 	end
 end
 
