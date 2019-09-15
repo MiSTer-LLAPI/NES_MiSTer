@@ -110,8 +110,8 @@ assign AUDIO_L   = |mute_cnt ? 16'd0 : sample_signed[15:0];
 assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
-assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]) | llio_en;
-assign LED_DISK  = |llio_buttons;
+assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]) | llapi_en;
+assign LED_DISK  = |llapi_buttons;
 assign LED_POWER = 0;
 
 assign VIDEO_ARX = status[8] ? 8'd16 : (hide_overscan ? 8'd64 : 8'd128);
@@ -392,8 +392,8 @@ reg   [1:0] last_joypad_clock;
 
 wire [11:0] powerpad = joyA[22:11] | joyB[22:11] | joyC[22:11] | joyD[22:11];
 
-wire [7:0] nes_joy_A = use_llio ? joy_ll_a : { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
-wire [7:0] nes_joy_B = use_llio2 ? joy_ll_b : { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], joyB[4] };
+wire [7:0] nes_joy_A = use_llapi ? joy_ll_a : { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
+wire [7:0] nes_joy_B = use_llapi2 ? joy_ll_b : { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], joyB[4] };
 wire [7:0] nes_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], joyC[4] };
 wire [7:0] nes_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], joyD[4] };
 
@@ -421,22 +421,22 @@ wire raw_serial = status[28];
 // 4 = RX+
 // 5 = RX-
 
-wire llio_latch_o, llio_latch_o2, llio_data_o, llio_data_o2;
+wire llapi_latch_o, llapi_latch_o2, llapi_data_o, llapi_data_o2;
 
 always_comb begin
 	USER_OUT = 6'b111111;
-	joy_data = {lightgun_en ? trigger : powerpad_d4[0],lightgun_en ? light : powerpad_d3[0],joypad_bits2[0],joypad_bits[0]};
+	joy_data = {D4_in, D3_in,joypad_bits2[0],joypad_bits[0]};
 
 	if (raw_serial) begin
 		USER_OUT[0] = joypad_strobe;
 		USER_OUT[1] = joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
-		joy_data = {~USER_IN[4], ~USER_IN[2], joy_swap ? ~USER_IN[5] : joypad_bits2[0], joy_swap ? joypad_bits[0] : ~USER_IN[5]};
-	end else if (llapi_en) begin
-		USER_OUT[0] = llio_latch_o;
-		USER_OUT[1] = llio_data_o;
-		USER_OUT[2] = ~(llapi_en & ~OSD_STATUS);;
-		USER_OUT[4] = llio_latch_o2;
-		USER_OUT[5] = llio_data_o2;
+		joy_data = {~USER_IN[4], ~USER_IN[2], ~joy_swap ? ~USER_IN[5] : joypad_bits2[0], ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
+	end else if (llapi_select) begin
+		USER_OUT[0] = llapi_latch_o;
+		USER_OUT[1] = llapi_data_o;
+		USER_OUT[2] = ~(llapi_select & ~OSD_STATUS);
+		USER_OUT[4] = llapi_latch_o2;
+		USER_OUT[5] = llapi_data_o2;
 	end
 end
 
@@ -477,46 +477,46 @@ zapper zap (
 	.trigger(trigger)
 );
 
-wire [31:0] llio_buttons, llio_buttons2;
-wire [71:0] llio_analog, llio_analog2;
-wire [7:0]  llio_type, llio_type2;
-wire llio_en, llio_en2;
+wire [31:0] llapi_buttons, llapi_buttons2;
+wire [71:0] llapi_analog, llapi_analog2;
+wire [7:0]  llapi_type, llapi_type2;
+wire llapi_en, llapi_en2;
 
-wire llapi_en = status[29];
+wire llapi_select = status[29];
 
-LLIO llio
+LLAPI llapi
 (
 	.CLK_50M(CLK_50M),
-	.LLIO_SYNC(vblank),
+	.LLAPI_SYNC(joypad_strobe),
 	.IO_LATCH_IN(USER_IN[0]),
-	.IO_LATCH_OUT(llio_latch_o),
+	.IO_LATCH_OUT(llapi_latch_o),
 	.IO_DATA_IN(USER_IN[1]),
-	.IO_DATA_OUT(llio_data_o),
-	.ENABLE(llapi_en & ~OSD_STATUS),
-	.LLIO_BUTTONS(llio_buttons),
-	.LLIO_ANALOG(llio_analog),
-	.LLIO_TYPE(llio_type),
-	.LLIO_EN(llio_en)
+	.IO_DATA_OUT(llapi_data_o),
+	.ENABLE(llapi_select & ~OSD_STATUS),
+	.LLAPI_BUTTONS(llapi_buttons),
+	.LLAPI_ANALOG(llapi_analog),
+	.LLAPI_TYPE(llapi_type),
+	.LLAPI_EN(llapi_en)
 );
 
-LLIO llio2
+LLAPI llapi2
 (
 	.CLK_50M(CLK_50M),
-	.LLIO_SYNC(vblank),
+	.LLAPI_SYNC(joypad_strobe),
 	.IO_LATCH_IN(USER_IN[4]),
-	.IO_LATCH_OUT(llio_latch_o2),
+	.IO_LATCH_OUT(llapi_latch_o2),
 	.IO_DATA_IN(USER_IN[5]),
-	.IO_DATA_OUT(llio_data_o2),
-	.ENABLE(llapi_en & ~OSD_STATUS),
-	.LLIO_BUTTONS(llio_buttons2),
-	.LLIO_ANALOG(llio_analog2),
-	.LLIO_TYPE(llio_type2),
-	.LLIO_EN(llio_en2)
+	.IO_DATA_OUT(llapi_data_o2),
+	.ENABLE(llapi_select & ~OSD_STATUS),
+	.LLAPI_BUTTONS(llapi_buttons2),
+	.LLAPI_ANALOG(llapi_analog2),
+	.LLAPI_TYPE(llapi_type2),
+	.LLAPI_EN(llapi_en2)
 );
 
-wire use_llio = llio_en && llapi_en;
-wire use_llio2 = llio_en2 && llapi_en;
-wire use_llio_gun = use_llio && llio_type == 8'd28;
+wire use_llapi = llapi_en && llapi_select;
+wire use_llapi2 = llapi_en2 && llapi_select;
+wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
 // Indexes:
 // 0 = D+    = P1 Latch
 // 1 = D-    = P1 Data
@@ -533,17 +533,17 @@ wire use_llio_gun = use_llio && llio_type == 8'd28;
 // 5 - Down
 // 6 - Left
 // 7 - Right
-wire [7:0] joy_ll_a = use_llio_gun ? 8'd0 : {
-	llio_buttons[24], llio_buttons[25], llio_buttons[26], llio_buttons[27],
-	llio_buttons[5], llio_buttons[4], llio_buttons[0], llio_buttons[1]
+wire [7:0] joy_ll_a = use_llapi_gun ? 8'd0 : {
+	llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
+	llapi_buttons[5], llapi_buttons[4], llapi_buttons[0], llapi_buttons[1]
 };
 
-wire [7:0] joy_ll_b = use_llio_gun ? 8'd0 : {
-	llio_buttons2[24], llio_buttons2[25], llio_buttons2[26], llio_buttons2[27],
-	llio_buttons2[5], llio_buttons2[4], llio_buttons2[0], llio_buttons2[1]
+wire [7:0] joy_ll_b = use_llapi_gun ? 8'd0 : {
+	llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
+	llapi_buttons2[5], llapi_buttons2[4], llapi_buttons2[0], llapi_buttons2[1]
 };
 
-assign OSD_TRIGGER = llio_buttons[4] & llio_buttons[5];
+assign OSD_TRIGGER = llapi_buttons[4] & llapi_buttons[5];
 
 
 always @(posedge clk) begin
@@ -657,12 +657,12 @@ reg [1:0] diskside;
 
 wire lightgun_en = |status[19:18];
 
-wire D4_in = use_llio_gun ? llio_buttons[0] : (lightgun_en ? trigger : powerpad_d4[0]);
-wire D3_in = use_llio_gun ? ~llio_buttons[1]: (lightgun_en ? light : powerpad_d3[0]);
+wire D4_in = use_llapi_gun ? llapi_buttons[0] : (lightgun_en ? trigger : powerpad_d4[0]);
+wire D3_in = use_llapi_gun ? ~llapi_buttons[1]: (lightgun_en ? light : powerpad_d3[0]);
 
 NES nes (
 	.clk             (clk),
-	.reset           (reset_nes),
+	.reset_nes       (reset_nes),
 	.sys_type        (status[24:23]),
 	.nes_div         (nes_ce),
 	.mapper_flags    (downloading ? 32'd0 : mapper_flags),
