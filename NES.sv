@@ -114,10 +114,10 @@ assign AUDIO_L   = |mute_cnt ? 16'd0 : sample_signed[15:0];
 assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
-assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]);
-assign LED_DISK  = 0;
+assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]) | llapi_en;
+assign LED_DISK  = |llapi_buttons;
 assign LED_POWER = 0;
-assign BUTTONS   = 0;
+assign BUTTONS[1]= 0;
 
 assign VIDEO_ARX = status[8] ? 8'd16 : (hide_overscan ? 8'd64 : 8'd128);
 assign VIDEO_ARY = status[8] ? 8'd9  : (hide_overscan ? 8'd49 : 8'd105);
@@ -134,7 +134,7 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 // 0         1         2         3 
 // 01234567890123456789012345678901
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXXXXX XXXXXXXXXXXXXXXXX XX
+// XXXXXXXXXXX XXXXXXXXXXXXXXXXXXXX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -161,7 +161,7 @@ parameter CONF_STR2 = {
 	"O8,Aspect Ratio,4:3,16:9;",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"O4,Hide Overscan,Off,On;",
-	"ORS,Mask Edges,Off,Left,Both,Auto;",
+	"OQR,Mask Edges,Off,Left,Both,Auto;",
 	"OP,Extra Sprites,Off,On;",
 	"OCF,Palette,Smooth,Unsat.,FCEUX,NES Classic,Composite,PC-10,PVM,Wavebeam,Real,Sony CXA,YUV,Greyscale,Rockman9,Nintendulator;",
 	"-;",
@@ -170,7 +170,7 @@ parameter CONF_STR2 = {
 	"OL,Zapper Trigger,Mouse,Joystick;",
 	"OM,Crosshairs,On,Off;",
 	"OA,Multitap,Disabled,Enabled;",
-	"OQ,Serial Mode,None,SNAC;",
+	"OST,Serial Mode,None,SNAC,LLAPI;",
 `ifdef DEBUG_AUDIO
 	"-;",
 	"OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
@@ -396,8 +396,8 @@ reg   [1:0] last_joypad_clock;
 
 wire [11:0] powerpad = joyA[22:11] | joyB[22:11] | joyC[22:11] | joyD[22:11];
 
-wire [7:0] nes_joy_A = { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
-wire [7:0] nes_joy_B = { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], joyB[4] };
+wire [7:0] nes_joy_A = use_llapi ? joy_ll_a : { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
+wire [7:0] nes_joy_B = use_llapi2 ? joy_ll_b : { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], joyB[4] };
 wire [7:0] nes_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], joyC[4] };
 wire [7:0] nes_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], joyD[4] };
 
@@ -415,7 +415,7 @@ wire fds_eject = swap_delay[2] | fds_swap_invert ? fds_btn : (clkcount[21] | fds
 
 reg [1:0] nes_ce;
 
-wire raw_serial = status[26];
+wire raw_serial = status[28];
 
 // Indexes:
 // 0 = D+
@@ -425,21 +425,22 @@ wire raw_serial = status[26];
 // 4 = RX+
 // 5 = RX-
 
-assign USER_OUT[2] = 1'b1;
-assign USER_OUT[3] = 1'b1;
-assign USER_OUT[4] = 1'b1;
-assign USER_OUT[5] = 1'b1;
-assign USER_OUT[6] = 1'b1;
+wire llapi_latch_o, llapi_latch_o2, llapi_data_o, llapi_data_o2;
 
 always_comb begin
+	USER_OUT = 6'b111111;
+	joy_data = {D4_in, D3_in,joypad_bits2[0],joypad_bits[0]};
+
 	if (raw_serial) begin
 		USER_OUT[0] = joypad_strobe;
-		USER_OUT[1] = ~joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
+		USER_OUT[1] = joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
 		joy_data = {~USER_IN[4], ~USER_IN[2], ~joy_swap ? ~USER_IN[5] : joypad_bits2[0], ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
-	end else begin
-		USER_OUT[0] = 1'b1;
-		USER_OUT[1] = 1'b1;
-		joy_data = {lightgun_en ? trigger : powerpad_d4[0],lightgun_en ? light : powerpad_d3[0],joypad_bits2[0],joypad_bits[0]};
+	end else if (llapi_select) begin
+		USER_OUT[0] = llapi_latch_o;
+		USER_OUT[1] = llapi_data_o;
+		USER_OUT[2] = ~(llapi_select & ~OSD_STATUS);
+		USER_OUT[4] = llapi_latch_o2;
+		USER_OUT[5] = llapi_data_o2;
 	end
 end
 
@@ -479,6 +480,75 @@ zapper zap (
 	.light(light),
 	.trigger(trigger)
 );
+
+wire [31:0] llapi_buttons, llapi_buttons2;
+wire [71:0] llapi_analog, llapi_analog2;
+wire [7:0]  llapi_type, llapi_type2;
+wire llapi_en, llapi_en2;
+
+wire llapi_select = status[29];
+
+LLAPI llapi
+(
+	.CLK_50M(CLK_50M),
+	.LLAPI_SYNC(joypad_strobe),
+	.IO_LATCH_IN(USER_IN[0]),
+	.IO_LATCH_OUT(llapi_latch_o),
+	.IO_DATA_IN(USER_IN[1]),
+	.IO_DATA_OUT(llapi_data_o),
+	.ENABLE(llapi_select & ~OSD_STATUS),
+	.LLAPI_BUTTONS(llapi_buttons),
+	.LLAPI_ANALOG(llapi_analog),
+	.LLAPI_TYPE(llapi_type),
+	.LLAPI_EN(llapi_en)
+);
+
+LLAPI llapi2
+(
+	.CLK_50M(CLK_50M),
+	.LLAPI_SYNC(joypad_strobe),
+	.IO_LATCH_IN(USER_IN[4]),
+	.IO_LATCH_OUT(llapi_latch_o2),
+	.IO_DATA_IN(USER_IN[5]),
+	.IO_DATA_OUT(llapi_data_o2),
+	.ENABLE(llapi_select & ~OSD_STATUS),
+	.LLAPI_BUTTONS(llapi_buttons2),
+	.LLAPI_ANALOG(llapi_analog2),
+	.LLAPI_TYPE(llapi_type2),
+	.LLAPI_EN(llapi_en2)
+);
+
+wire use_llapi = llapi_en && llapi_select;
+wire use_llapi2 = llapi_en2 && llapi_select;
+wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
+// Indexes:
+// 0 = D+    = P1 Latch
+// 1 = D-    = P1 Data
+// 2 = TX-   = LLAPI Enable
+// 3 = GND_d = N/C
+// 4 = RX+   = P2 Latch
+// 5 = RX-   = P2 Data
+
+// 0 - A
+// 1 - B
+// 2 - Select
+// 3 - Start
+// 4 - Up
+// 5 - Down
+// 6 - Left
+// 7 - Right
+wire [7:0] joy_ll_a = use_llapi_gun ? 8'd0 : {
+	llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
+	llapi_buttons[5], llapi_buttons[4], llapi_buttons[0], llapi_buttons[1]
+};
+
+wire [7:0] joy_ll_b = use_llapi_gun ? 8'd0 : {
+	llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
+	llapi_buttons2[5], llapi_buttons2[4], llapi_buttons2[0], llapi_buttons2[1]
+};
+
+assign BUTTONS[0] = llapi_buttons[4] & llapi_buttons[5];
+
 
 always @(posedge clk) begin
 	if (reset_nes) begin
@@ -591,6 +661,9 @@ reg [1:0] diskside;
 
 wire lightgun_en = |status[19:18];
 
+wire D4_in = use_llapi_gun ? llapi_buttons[0] : (lightgun_en ? trigger : powerpad_d4[0]);
+wire D3_in = use_llapi_gun ? ~llapi_buttons[1]: (lightgun_en ? light : powerpad_d3[0]);
+
 NES nes (
 	.clk             (clk),
 	.reset_nes       (reset_nes),
@@ -613,7 +686,7 @@ NES nes (
 	.emphasis        (emphasis),
 	.cycle           (cycle),
 	.scanline        (scanline),
-	.mask            (status[28:27]),
+	.mask            (status[27:26]),
 	// User Input
 	.joypad_strobe   (joypad_strobe),
 	.joypad_clock    (joypad_clock),
@@ -838,6 +911,7 @@ assign VGA_SL = sl[1:0];
 
 wire [1:0] reticle;
 wire hold_reset;
+wire vblank;
 wire ce_pix;
 
 video video
@@ -845,6 +919,7 @@ video video
 	.*,
 	.clk(clk),
 	.reset(reset_nes),
+	.vblank_out(vblank),
 	.cnt(nes_ce),
 	.hold_reset(hold_reset),
 	.count_v(scanline),
