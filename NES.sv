@@ -134,7 +134,7 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 // 0         1         2         3          4         5         6 
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXXXXX XXXXXX  XXXXXXXXXXXX XXX
+// XXXXXXXXXXXXXXXXXX  XXXXXXXXXXXX XXX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -160,7 +160,7 @@ parameter CONF_STR2 = {
 	"O8,Aspect Ratio,4:3,16:9;",
 	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"O4,Hide Overscan,Off,On;",
-	"ORS,Mask Edges,Off,Left,Both,Auto;",
+	"OQR,Mask Edges,Off,Left,Both,Auto;",
 	"OP,Extra Sprites,Off,On;",
 	"OCF,Palette,Smooth,Unsat.,FCEUX,NES Classic,Composite,PC-10,PVM,Wavebeam,Real,Sony CXA,YUV,Greyscale,Rockman9,Ninten.,Custom;",
 	"H3F3,PAL,Custom Palette;",
@@ -170,8 +170,8 @@ parameter CONF_STR2 = {
 	"OL,Zapper Trigger,Mouse,Joystick;",
 	"OM,Crosshairs,On,Off;",
 	"OA,Multitap,Disabled,Enabled;",
-	"OQ,Serial Mode,None,SNAC;",
-	"H4OT,SNAC Zapper,Off,On;",
+	"OST,Serial Mode,None,SNAC,LLAPI;",
+	"H4OB,SNAC Zapper,Off,On;",
 `ifdef DEBUG_AUDIO
 	"-;",
 	"OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
@@ -238,7 +238,7 @@ always_ff @(posedge clk) begin
 
 end
 
-assign BUTTONS[0] = osd_btn;
+assign BUTTONS[0] = osd_btn || llapi_osd;
 
 // Pop OSD menu if no rom has been loaded automatically
 wire rom_loaded;
@@ -309,7 +309,7 @@ reg         ioctl_wait;
 
 wire [24:0] ps2_mouse;
 wire [15:0] joy_analog0, joy_analog1;
-wire  [7:0] pdl[4];
+wire  [7:0] pdl_usb[4];
 wire        forced_scandoubler;
 
 wire [21:0] gamma_bus;
@@ -329,10 +329,10 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
 	.joystick_3(joyD),
 	.joystick_analog_0(joy_analog0),
 	.joystick_analog_1(joy_analog1),
-	.paddle_0(pdl[0]),
-	.paddle_1(pdl[1]),
-	.paddle_2(pdl[2]),
-	.paddle_3(pdl[3]),
+	.paddle_0(pdl_usb[0]),
+	.paddle_1(pdl_usb[1]),
+	.paddle_2(pdl_usb[2]),
+	.paddle_3(pdl_usb[3]),
 
 	.status(status),
 	.status_menumask({~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
@@ -461,16 +461,40 @@ reg   [1:0] last_joypad_clock;
 
 wire [11:0] powerpad = joyA[22:11] | joyB[22:11] | joyC[22:11] | joyD[22:11];
 
+wire [7:0] usb_joy_A = { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], ~paddle_atr & joyA[4] };
+wire [7:0] usb_joy_B = { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], ~paddle_atr & joyB[4] };
+wire [7:0] usb_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], ~paddle_atr & joyC[4] };
+wire [7:0] usb_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], ~paddle_atr & joyD[4] };
+
+wire [7:0] nes_joy_A;
+wire [7:0] nes_joy_B;
+wire [7:0] nes_joy_C;
+wire [7:0] nes_joy_D;
+// if LLAPI is enabled, shift USB controllers over to the next available player slot
+always_comb begin
+	if (use_llapi && use_llapi2) begin
+		nes_joy_A = joy_ll_a;
+		nes_joy_B = joy_ll_b;
+		nes_joy_C = usb_joy_A;
+		nes_joy_D = usb_joy_B;
+	end else if (use_llapi || use_llapi2) begin
+		nes_joy_A = use_llapi  ? joy_ll_a : usb_joy_A;
+		nes_joy_B = use_llapi2 ? joy_ll_b : usb_joy_A;
+		nes_joy_C = usb_joy_B;
+		nes_joy_D = usb_joy_C;
+	end else begin
+		nes_joy_A = usb_joy_A;
+		nes_joy_B = usb_joy_B;
+		nes_joy_C = usb_joy_C;
+		nes_joy_D = usb_joy_D;
+	end
+end
+
 wire [3:0] famtr;
 assign famtr[0] = (~joypad_out[2] & powerpad[3]) | (~joypad_out[1] & powerpad[7]) | (~joypad_out[0] & powerpad[11]);
 assign famtr[1] = (~joypad_out[2] & powerpad[2]) | (~joypad_out[1] & powerpad[6]) | (~joypad_out[0] & powerpad[10]);
 assign famtr[2] = (~joypad_out[2] & powerpad[1]) | (~joypad_out[1] & powerpad[5]) | (~joypad_out[0] & powerpad[9] );
 assign famtr[3] = (~joypad_out[2] & powerpad[0]) | (~joypad_out[1] & powerpad[4]) | (~joypad_out[0] & powerpad[8] );
-
-wire [7:0] nes_joy_A = { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], ~paddle_atr & joyA[4] };
-wire [7:0] nes_joy_B = { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], ~paddle_atr & joyB[4] };
-wire [7:0] nes_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], ~paddle_atr & joyC[4] };
-wire [7:0] nes_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], ~paddle_atr & joyD[4] };
 
 wire mic_button = joyA[9] | joyB[9];
 wire fds_btn = joyA[8] | joyB[8];
@@ -486,10 +510,10 @@ wire fds_eject = swap_delay[2] | fds_swap_invert ? fds_btn : (clkcount[22] | fds
 
 reg [1:0] nes_ce;
 
-wire raw_serial = status[26];
+wire raw_serial = status[28];
 
 // Extend SNAC zapper high signal to be closer to original NES
-wire extend_serial_d4 = status[29];
+wire extend_serial_d4 = status[11];
 wire serial_d4 = extend_serial_d4 ? |serial_d4_sr : ~USER_IN[4];
 reg [7:0] serial_d4_sr;
 always @(posedge clk) begin
@@ -513,31 +537,34 @@ end
 // 4 = RX+
 // 5 = RX-
 
-assign USER_OUT[2] = 1'b1;
-assign USER_OUT[3] = 1'b1;
-assign USER_OUT[4] = 1'b1;
-assign USER_OUT[5] = 1'b1;
-assign USER_OUT[6] = 1'b1;
+wire llapi_latch_o, llapi_latch_o2, llapi_data_o, llapi_data_o2;
 
 reg [4:0] joypad1_data, joypad2_data;
 
 always_comb begin
+	USER_OUT = 6'b111111;
+	joypad1_data = {2'b0, mic, paddle_en & paddle_btn, joypad_bits[0]};
+	joypad2_data = joypad_bits2[0];
+
+	// periphery on port 2
+	if (use_llapi_gun)        joypad2_data[4:3] = {llapi_buttons[0],~llapi_buttons[1]};
+	else if (use_llapi_gun2)        joypad2_data[4:3] = {llapi_buttons2[0],~llapi_buttons2[1]};
+	else if (lightgun_en)        joypad2_data[4:3] = {trigger,light};
+	if (paddle_en)          joypad2_data[4:1] = {joypad_d4[0], paddle_btn, 1'b0, joypad_d4[0]};
+	if (status[34:32] == 6) joypad2_data[4:3] = {joypad_d4[0], joypad_d3[0]};
+	if (status[34:32] == 7) joypad2_data[4:1] = ~famtr;
+
 	if (raw_serial) begin
 		USER_OUT[0]  = joypad_out[0];
 		USER_OUT[1]  = ~joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
 		joypad1_data = {2'b0, mic, 1'b0, ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
 		joypad2_data = {serial_d4, ~USER_IN[2], 2'b00, ~joy_swap ? ~USER_IN[5] : joypad_bits2[0]};
-	end else begin
-		USER_OUT[0]  = 1'b1;
-		USER_OUT[1]  = 1'b1;
-		joypad1_data = {2'b0, mic, paddle_en & paddle_btn, joypad_bits[0]};
-		joypad2_data = joypad_bits2[0];
-
-		// periphery on port 2
-		if (lightgun_en)        joypad2_data[4:3] = {trigger,light};
-		if (paddle_en)          joypad2_data[4:1] = {joypad_d4[0], paddle_btn, 1'b0, joypad_d4[0]};
-		if (status[34:32] == 6) joypad2_data[4:3] = {joypad_d4[0], joypad_d3[0]};
-		if (status[34:32] == 7) joypad2_data[4:1] = ~famtr;
+	end else if (llapi_select) begin
+		USER_OUT[0] = llapi_latch_o;
+		USER_OUT[1] = llapi_data_o;
+		USER_OUT[2] = ~(llapi_select & ~OSD_STATUS);
+		USER_OUT[4] = llapi_latch_o2;
+		USER_OUT[5] = llapi_data_o2;
 	end
 end
 
@@ -576,6 +603,133 @@ zapper zap (
 	.trigger(trigger)
 );
 
+wire [31:0] llapi_buttons, llapi_buttons2;
+wire [71:0] llapi_analog, llapi_analog2;
+wire [7:0]  llapi_type, llapi_type2;
+wire llapi_en, llapi_en2;
+
+wire llapi_select = status[29];
+
+LLAPI llapi
+(
+	.CLK_50M(CLK_50M),
+	.LLAPI_SYNC(joypad_out[0]),
+	.IO_LATCH_IN(USER_IN[0]),
+	.IO_LATCH_OUT(llapi_latch_o),
+	.IO_DATA_IN(USER_IN[1]),
+	.IO_DATA_OUT(llapi_data_o),
+	.ENABLE(llapi_select & ~OSD_STATUS),
+	.LLAPI_BUTTONS(llapi_buttons),
+	.LLAPI_ANALOG(llapi_analog),
+	.LLAPI_TYPE(llapi_type),
+	.LLAPI_EN(llapi_en),
+	.fast(use_llapi_gun)
+);
+
+LLAPI llapi2
+(
+	.CLK_50M(CLK_50M),
+	.LLAPI_SYNC(joypad_out[0]),
+	.IO_LATCH_IN(USER_IN[4]),
+	.IO_LATCH_OUT(llapi_latch_o2),
+	.IO_DATA_IN(USER_IN[5]),
+	.IO_DATA_OUT(llapi_data_o2),
+	.ENABLE(llapi_select & ~OSD_STATUS),
+	.LLAPI_BUTTONS(llapi_buttons2),
+	.LLAPI_ANALOG(llapi_analog2),
+	.LLAPI_TYPE(llapi_type2),
+	.LLAPI_EN(llapi_en2),
+	.fast(use_llapi_gun2)
+);
+
+reg llapi_button_pressed, llapi_button_pressed2;
+
+always @(posedge CLK_50M) begin
+        if (reset_nes) begin
+                llapi_button_pressed  <= 0;
+                llapi_button_pressed2 <= 0;
+	end else begin
+	       	if (|llapi_buttons)
+                	llapi_button_pressed  <= 1;
+        	if (|llapi_buttons2)
+                	llapi_button_pressed2 <= 1;
+	end
+end
+
+// controller id is 0 if there is either an Atari controller or no controller
+// if id is 0, assume there is no controller until a button is pressed
+wire use_llapi = llapi_en && llapi_select && (|llapi_type || llapi_button_pressed);
+wire use_llapi2 = llapi_en2 && llapi_select && (|llapi_type2 || llapi_button_pressed2);
+
+wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
+wire use_llapi_gun2 = use_llapi2 && llapi_type2 == 8'd28;
+
+wire use_llapi_paddle = use_llapi && (llapi_type == 8'd41) || (llapi_type == 8'd42) ||  (llapi_type == 8'd30) || (llapi_type == 8'd7);
+wire use_llapi_paddle2 = use_llapi2 && (llapi_type2 == 8'd41) || (llapi_type2 == 8'd42) ||  (llapi_type2 == 8'd30) || (llapi_type2 == 8'd7);
+
+wire [7:0] pdl[4];
+always_comb begin
+	if (use_llapi_paddle && use_llapi_paddle2) begin
+		pdl[0] = llapi_analog[63:56];
+		pdl[1] = llapi_analog2[63:56];
+		pdl[2] = pdl_usb[0];
+		pdl[3] = pdl_usb[1];
+	end else if (use_llapi_paddle || use_llapi_paddle2) begin
+		pdl[0] = use_llapi_paddle  ? llapi_analog[63:56] : pdl_usb[0]; 
+		pdl[1] = use_llapi_paddle2 ? llapi_analog2[63:56] : pdl_usb[0];
+		pdl[2] = pdl_usb[1];
+		pdl[3] = pdl_usb[2];
+	end else begin
+		pdl[0] = pdl_usb[0];
+		pdl[1] = pdl_usb[1];
+		pdl[2] = pdl_usb[2];
+		pdl[3] = pdl_usb[3];
+	end
+end
+
+
+// Indexes:
+// 0 = D+    = P1 Latch
+// 1 = D-    = P1 Data
+// 2 = TX-   = LLAPI Enable
+// 3 = GND_d = N/C
+// 4 = RX+   = P2 Latch
+// 5 = RX-   = P2 Data
+
+wire [7:0] joy_ll_a;
+always_comb begin
+        // if saturn controller, move select button to Z
+        if (llapi_type == 8 || llapi_type == 3) begin
+            joy_ll_a = use_llapi_gun ? 8'd0 : use_llapi_paddle ? {7'd0,llapi_buttons[0] | llapi_buttons[24]} : {
+                llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
+                llapi_buttons[5],  llapi_buttons[6],  llapi_buttons[0],  llapi_buttons[1]
+            };
+        end else begin
+            joy_ll_a = use_llapi_gun ? 8'd0 : use_llapi_paddle ? {7'd0,llapi_buttons[0] | llapi_buttons[24]} : {
+                llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
+                llapi_buttons[5],  llapi_buttons[4],  llapi_buttons[0],  llapi_buttons[1]
+            };
+        end
+end
+
+wire [7:0] joy_ll_b;
+always_comb begin
+        // if saturn controller, move select button to Z
+        if (llapi_type2 == 8 || llapi_type2 == 3) begin
+            joy_ll_b = use_llapi_gun2 ? 8'd0 : use_llapi_paddle2 ? {7'd0,llapi_buttons2[0] | llapi_buttons2[24]} : {
+                llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
+                llapi_buttons2[5],  llapi_buttons2[6],  llapi_buttons2[0],  llapi_buttons2[1]
+            };
+        end else begin
+            joy_ll_b = use_llapi_gun2 ? 8'd0 : use_llapi_paddle2 ? {7'd0,llapi_buttons2[0] | llapi_buttons2[24]} : {
+                llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
+                llapi_buttons2[5],  llapi_buttons2[4],  llapi_buttons2[0],  llapi_buttons2[1]
+            };
+        end
+end
+
+wire llapi_osd = (llapi_buttons[26] && llapi_buttons[5] && llapi_buttons[0]) || (llapi_buttons2[26] && llapi_buttons2[5] && llapi_buttons2[0]);
+
 reg [7:0] paddle = 0;
 always @(posedge clk) begin
 	reg [7:0] old_pdl[4];
@@ -595,7 +749,7 @@ wire [7:0] paddle_adj = paddle_off + ((paddle < 40) ? 8'd40 : (paddle > 216) ? 8
 wire [7:0] paddle_nes = ~{paddle_adj[0],paddle_adj[1],paddle_adj[2],paddle_adj[3],paddle_adj[4],paddle_adj[5],paddle_adj[6],paddle_adj[7]};
 wire       paddle_en  = (status[34:33] == 2);
 wire       paddle_atr = paddle_en & status[32];
-wire       paddle_btn = paddle_atr ? (joyA[4] | joyB[4] | joyC[4] | joyD[4]) : (joyA[10] | joyB[10] | joyC[10] | joyD[10]);
+wire       paddle_btn = (paddle_atr ? (joyA[4] | joyB[4] | joyC[4] | joyD[4]) : (joyA[10] | joyB[10] | joyC[10] | joyD[10])) | llapi_buttons[0] | llapi_buttons[24] | llapi_buttons2[0] | llapi_buttons2[24];
 
 always @(posedge clk) begin
 	if (reset_nes) begin
@@ -732,7 +886,7 @@ NES nes (
 	.emphasis        (emphasis),
 	.cycle           (cycle),
 	.scanline        (scanline),
-	.mask            (status[28:27]),
+	.mask            (status[27:26]),
 	// User Input
 	.joypad_out      (joypad_out),
 	.joypad_clock    (joypad_clock),

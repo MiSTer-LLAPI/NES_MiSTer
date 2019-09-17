@@ -16,5 +16,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/apu.sv
 set_global_assignment -name VERILOG_FILE rtl/nes.v
 set_global_assignment -name VERILOG_FILE rtl/dsp.v
 set_global_assignment -name VERILOG_FILE rtl/compat.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/llapi.sv
 set_global_assignment -name SDC_FILE NES.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE NES.sv
