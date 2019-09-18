@@ -117,7 +117,7 @@ assign AUDIO_MIX = 0;
 assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]) | llapi_en;
 assign LED_DISK  = |llapi_buttons;
 assign LED_POWER = 0;
-assign BUTTONS[1]= 0;
+assign BUTTONS   = llapi_osd;
 
 assign VIDEO_ARX = status[8] ? 8'd16 : (hide_overscan ? 8'd64 : 8'd128);
 assign VIDEO_ARY = status[8] ? 8'd9  : (hide_overscan ? 8'd49 : 8'd105);
@@ -549,8 +549,7 @@ wire [7:0] joy_ll_b = use_llapi_gun2 ? 8'd0 : {
 	llapi_buttons2[5], llapi_buttons2[4], llapi_buttons2[0], llapi_buttons2[1]
 };
 
-assign BUTTONS[0] = llapi_buttons[4] & llapi_buttons[5];
-
+wire llapi_osd = (llapi_buttons[26] & llapi_buttons[5] & llapi_buttons[0]) || (llapi_buttons2[26] & llapi_buttons2[5] & llapi_buttons2[0]);
 
 always @(posedge clk) begin
 	if (reset_nes) begin
