@@ -396,10 +396,34 @@ reg   [1:0] last_joypad_clock;
 
 wire [11:0] powerpad = joyA[22:11] | joyB[22:11] | joyC[22:11] | joyD[22:11];
 
-wire [7:0] nes_joy_A = use_llapi ? joy_ll_a : { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
-wire [7:0] nes_joy_B = use_llapi2 ? joy_ll_b : { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], joyB[4] };
-wire [7:0] nes_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], joyC[4] };
-wire [7:0] nes_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], joyD[4] };
+wire [7:0] usb_joy_A = { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], joyA[5], joyA[4] };
+wire [7:0] usb_joy_B = { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], joyB[4] };
+wire [7:0] usb_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], joyC[4] };
+wire [7:0] usb_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], joyD[4] };
+
+wire [7:0] nes_joy_A;
+wire [7:0] nes_joy_B;
+wire [7:0] nes_joy_C;
+wire [7:0] nes_joy_D;
+// if LLAPI is enabled, shift USB controllers over to the next available player slot
+always_comb begin
+	if (use_llapi & use_llapi2) begin
+		nes_joy_A = joy_ll_a;
+		nes_joy_B = joy_ll_b;
+		nes_joy_C = usb_joy_A;
+		nes_joy_D = usb_joy_B;
+	end else if (use_llapi ^ use_llapi2) begin
+		nes_joy_A = use_llapi  ? joy_ll_a : usb_joy_A;
+		nes_joy_B = use_llapi2 ? joy_ll_b : usb_joy_A;
+		nes_joy_C = usb_joy_B;
+		nes_joy_D = usb_joy_C;
+	end else begin
+		nes_joy_A = usb_joy_A;
+		nes_joy_B = usb_joy_B;
+		nes_joy_C = usb_joy_C;
+		nes_joy_D = usb_joy_D;
+	end
+end
 
 wire mic_button = joyA[10] | joyB[10];
 wire fds_btn = joyA[8] | joyB[8];
