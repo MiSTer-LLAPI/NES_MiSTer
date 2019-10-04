@@ -545,7 +545,6 @@ LLAPI llapi2
 wire use_llapi = llapi_en && llapi_select;
 wire use_llapi2 = llapi_en2 && llapi_select;
 wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
-wire use_llapi_gun2 = use_llapi && llapi_type2 == 8'd28;
 
 // Indexes:
 // 0 = D+    = P1 Latch
@@ -568,7 +567,7 @@ wire [7:0] joy_ll_a = use_llapi_gun ? 8'd0 : {
 	llapi_buttons[5], llapi_buttons[4], llapi_buttons[0], llapi_buttons[1]
 };
 
-wire [7:0] joy_ll_b = use_llapi_gun2 ? 8'd0 : {
+wire [7:0] joy_ll_b = use_llapi_gun ? 8'd0 : {
 	llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
 	llapi_buttons2[5], llapi_buttons2[4], llapi_buttons2[0], llapi_buttons2[1]
 };
