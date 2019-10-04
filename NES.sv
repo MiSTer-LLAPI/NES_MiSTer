@@ -115,7 +115,7 @@ assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
 assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]) | llapi_en;
-assign LED_DISK  = |llapi_buttons;
+assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS   = llapi_osd;
 
