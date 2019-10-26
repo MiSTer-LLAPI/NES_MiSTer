@@ -544,7 +544,6 @@ LLAPI llapi2
 
 wire use_llapi = llapi_en && llapi_select;
 wire use_llapi2 = llapi_en2 && llapi_select;
-wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
 
 // Indexes:
 // 0 = D+    = P1 Latch
@@ -562,12 +561,12 @@ wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
 // 5 - Down
 // 6 - Left
 // 7 - Right
-wire [7:0] joy_ll_a = use_llapi_gun ? 8'd0 : {
+wire [7:0] joy_ll_a = {
 	llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
 	llapi_buttons[5], llapi_buttons[4], llapi_buttons[0], llapi_buttons[1]
 };
 
-wire [7:0] joy_ll_b = use_llapi_gun ? 8'd0 : {
+wire [7:0] joy_ll_b = {
 	llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
 	llapi_buttons2[5], llapi_buttons2[4], llapi_buttons2[0], llapi_buttons2[1]
 };
@@ -685,8 +684,8 @@ reg [1:0] diskside;
 
 wire lightgun_en = |status[19:18];
 
-wire D4_in = use_llapi_gun ? llapi_buttons[0] : (lightgun_en ? trigger : powerpad_d4[0]);
-wire D3_in = use_llapi_gun ? ~llapi_buttons[1]: (lightgun_en ? light : powerpad_d3[0]);
+wire D4_in = lightgun_en ? trigger : powerpad_d4[0];
+wire D3_in = lightgun_en ? light : powerpad_d3[0];
 
 NES nes (
 	.clk             (clk),
