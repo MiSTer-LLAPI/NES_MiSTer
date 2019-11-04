@@ -564,11 +564,11 @@ wire use_llapi2 = llapi_en2 && llapi_select;
 
 wire [7:0] joy_ll_a;
 always_comb begin
-        // if saturn controller, move select button to X
+        // if saturn controller, move select button to Z
         if (llapi_type == 8 || llapi_type == 3) begin
                 joy_ll_a = {
 			llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
-			llapi_buttons[5],  llapi_buttons[2],  llapi_buttons[0],  llapi_buttons[1]
+			llapi_buttons[5],  llapi_buttons[6],  llapi_buttons[0],  llapi_buttons[1]
                 };
         end else begin
 		joy_ll_a = {
@@ -580,11 +580,11 @@ end
 
 wire [7:0] joy_ll_b;
 always_comb begin
-        // if saturn controller, move select button to X
+        // if saturn controller, move select button to Z
         if (llapi_type2 == 8 || llapi_type2 == 3) begin
                 joy_ll_b = {
 			llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
-			llapi_buttons2[5],  llapi_buttons2[2],  llapi_buttons2[0],  llapi_buttons2[1]
+			llapi_buttons2[5],  llapi_buttons2[6],  llapi_buttons2[0],  llapi_buttons2[1]
                 };
         end else begin
 		joy_ll_b = {
