@@ -114,7 +114,7 @@ assign AUDIO_L   = |mute_cnt ? 16'd0 : sample_signed[15:0];
 assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
-assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]) | llapi_en;
+assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]);
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS   = llapi_osd;
@@ -407,12 +407,12 @@ wire [7:0] nes_joy_C;
 wire [7:0] nes_joy_D;
 // if LLAPI is enabled, shift USB controllers over to the next available player slot
 always_comb begin
-	if (use_llapi & use_llapi2) begin
+	if (use_llapi && use_llapi2) begin
 		nes_joy_A = joy_ll_a;
 		nes_joy_B = joy_ll_b;
 		nes_joy_C = usb_joy_A;
 		nes_joy_D = usb_joy_B;
-	end else if (use_llapi ^ use_llapi2) begin
+	end else if (use_llapi || use_llapi2) begin
 		nes_joy_A = use_llapi  ? joy_ll_a : usb_joy_A;
 		nes_joy_B = use_llapi2 ? joy_ll_b : usb_joy_A;
 		nes_joy_C = usb_joy_B;
@@ -594,7 +594,7 @@ always_comb begin
         end
 end
 
-wire llapi_osd = (llapi_buttons[26] & llapi_buttons[5] & llapi_buttons[0]) || (llapi_buttons2[26] & llapi_buttons2[5] & llapi_buttons2[0]);
+wire llapi_osd = (llapi_buttons[26] && llapi_buttons[5] && llapi_buttons[0]) || (llapi_buttons2[26] && llapi_buttons2[5] && llapi_buttons2[0]);
 
 always @(posedge clk) begin
 	if (reset_nes) begin
