@@ -407,12 +407,12 @@ wire [7:0] nes_joy_C;
 wire [7:0] nes_joy_D;
 // if LLAPI is enabled, shift USB controllers over to the next available player slot
 always_comb begin
-	if (use_llapi && use_llapi2) begin
+	if (use_llapi & use_llapi2) begin
 		nes_joy_A = joy_ll_a;
 		nes_joy_B = joy_ll_b;
 		nes_joy_C = usb_joy_A;
 		nes_joy_D = usb_joy_B;
-	end else if (use_llapi || use_llapi2) begin
+	end else if (use_llapi ^ use_llapi2) begin
 		nes_joy_A = use_llapi  ? joy_ll_a : usb_joy_A;
 		nes_joy_B = use_llapi2 ? joy_ll_b : usb_joy_A;
 		nes_joy_C = usb_joy_B;
@@ -542,8 +542,8 @@ LLAPI llapi2
 	.LLAPI_EN(llapi_en2)
 );
 
-wire use_llapi = llapi_en && llapi_select && (|llapi_type);
-wire use_llapi2 = llapi_en2 && llapi_select && (|llapi_type2);
+wire use_llapi = llapi_en && llapi_select;
+wire use_llapi2 = llapi_en2 && llapi_select;
 
 // Indexes:
 // 0 = D+    = P1 Latch
