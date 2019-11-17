@@ -23,6 +23,8 @@ module video
 	input [14:0] load_color_data,
 	input  [5:0] load_color_index,
 
+	inout [21:0] gamma_bus,
+
 	output       ce_pix,
 	output   reg hold_reset,
 
@@ -345,10 +347,10 @@ wire  [4:0] vga_b = dark_b ? pixel[14:11] + pixel[14:12] : pixel[14:10];
 
 assign vblank_out = VBlank_r;
 
-video_mixer #(260, 0) video_mixer
+video_mixer #(260, 0, 1) video_mixer
 (
 	.*,
-	.clk_sys(clk),
+	.clk_vid(clk),
 	.ce_pix(pix_ce),
 	.ce_pix_out(ce_pix),
 	
