@@ -582,7 +582,8 @@ LLAPI llapi
 	.LLAPI_BUTTONS(llapi_buttons),
 	.LLAPI_ANALOG(llapi_analog),
 	.LLAPI_TYPE(llapi_type),
-	.LLAPI_EN(llapi_en)
+	.LLAPI_EN(llapi_en),
+	.fast(use_llapi_gun)
 );
 
 LLAPI llapi2
@@ -597,7 +598,8 @@ LLAPI llapi2
 	.LLAPI_BUTTONS(llapi_buttons2),
 	.LLAPI_ANALOG(llapi_analog2),
 	.LLAPI_TYPE(llapi_type2),
-	.LLAPI_EN(llapi_en2)
+	.LLAPI_EN(llapi_en2),
+	.fast(llapi_type2 == 8'd28)
 );
 
 reg llapi_button_pressed, llapi_button_pressed2;
