@@ -599,7 +599,7 @@ LLAPI llapi2
 	.LLAPI_ANALOG(llapi_analog2),
 	.LLAPI_TYPE(llapi_type2),
 	.LLAPI_EN(llapi_en2),
-	.fast(llapi_type2 == 8'd28)
+	.fast(use_llapi_gun2)
 );
 
 reg llapi_button_pressed, llapi_button_pressed2;
@@ -619,6 +619,9 @@ end
 wire use_llapi = llapi_en && llapi_select && (|llapi_type || llapi_button_pressed);
 wire use_llapi2 = llapi_en2 && llapi_select && (|llapi_type2 || llapi_button_pressed2);
 
+wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
+wire use_llapi_gun2 = use_llapi2 && llapi_type2 == 8'd28;
+
 // Indexes:
 // 0 = D+    = P1 Latch
 // 1 = D-    = P1 Data
@@ -627,28 +630,19 @@ wire use_llapi2 = llapi_en2 && llapi_select && (|llapi_type2 || llapi_button_pre
 // 4 = RX+   = P2 Latch
 // 5 = RX-   = P2 Data
 
-// 0 - A
-// 1 - B
-// 2 - Select
-// 3 - Start
-// 4 - Up
-// 5 - Down
-// 6 - Left
-// 7 - Right
-
 wire [7:0] joy_ll_a;
 always_comb begin
         // if saturn controller, move select button to Z
         if (llapi_type == 8 || llapi_type == 3) begin
-                joy_ll_a = {
-			llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
-			llapi_buttons[5],  llapi_buttons[6],  llapi_buttons[0],  llapi_buttons[1]
-                };
+            joy_ll_a = use_llapi_gun ? 8'd0 : {
+                llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
+                llapi_buttons[5],  llapi_buttons[6],  llapi_buttons[0],  llapi_buttons[1]
+            };
         end else begin
-		joy_ll_a = {
-			llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
-			llapi_buttons[5],  llapi_buttons[4],  llapi_buttons[0],  llapi_buttons[1]
-		};
+            joy_ll_a = use_llapi_gun ? 8'd0 : {
+                llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
+                llapi_buttons[5],  llapi_buttons[4],  llapi_buttons[0],  llapi_buttons[1]
+            };
         end
 end
 
@@ -656,15 +650,15 @@ wire [7:0] joy_ll_b;
 always_comb begin
         // if saturn controller, move select button to Z
         if (llapi_type2 == 8 || llapi_type2 == 3) begin
-                joy_ll_b = {
-			llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
-			llapi_buttons2[5],  llapi_buttons2[6],  llapi_buttons2[0],  llapi_buttons2[1]
-                };
+            joy_ll_b = use_llapi_gun2 ? 8'd0 : {
+                llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
+                llapi_buttons2[5],  llapi_buttons2[6],  llapi_buttons2[0],  llapi_buttons2[1]
+            };
         end else begin
-		joy_ll_b = {
-			llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
-			llapi_buttons2[5],  llapi_buttons2[4],  llapi_buttons2[0],  llapi_buttons2[1]
-		};
+            joy_ll_b = use_llapi_gun2 ? 8'd0 : {
+                llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
+                llapi_buttons2[5],  llapi_buttons2[4],  llapi_buttons2[0],  llapi_buttons2[1]
+            };
         end
 end
 
@@ -783,8 +777,8 @@ reg [1:0] diskside;
 
 wire lightgun_en = |status[19:18];
 
-wire D4_in = lightgun_en ? trigger : powerpad_d4[0];
-wire D3_in = lightgun_en ? light : powerpad_d3[0];
+wire D4_in = use_llapi_gun ?  llapi_buttons[0] : (use_llapi_gun2 ?  llapi_buttons2[0] : (lightgun_en ? trigger : powerpad_d4[0]));
+wire D3_in = use_llapi_gun ? ~llapi_buttons[1] : (use_llapi_gun2 ? ~llapi_buttons2[1] : (lightgun_en ? light   : powerpad_d3[0]));
 
 wire gg_reset = (type_fds | type_gg | type_nes | type_nsf) && ioctl_download;
 
