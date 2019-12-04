@@ -604,7 +604,7 @@ LLAPI llapi2
 
 reg llapi_button_pressed, llapi_button_pressed2;
 
-always @(posedge clk) begin
+always @(posedge CLK_50M) begin
         if (reset_nes) begin
                 llapi_button_pressed  <= 0;
                 llapi_button_pressed2 <= 0;
