@@ -254,8 +254,8 @@ always_ff @(posedge CLK_50M) begin
 					state <= STATE_WRITE_START;
 					write_buffer <= {24'd0, LLAPI_GET_MODES};
 				end
-			end else if ((sync_counter >= ((poll_offset < (poll_time - TIME_BUFFER)) && enable) ?
-				(poll_time - poll_offset) : poll_time) || fast) begin // Trigger timed device poll. Offset can not be > half the poll time.
+			end else if ((sync_counter >= (((poll_offset < (poll_time - TIME_BUFFER)) && enable) ?
+				(poll_time - poll_offset) : poll_time)) || fast) begin // Trigger timed device poll. Offset can not be > half the poll time.
 				count <= count + 1'b1;
 				if (count > TIME_WAIT) begin
 					if (stage != READ_IDLE) begin // IO timeout, device disconnect/defunct
