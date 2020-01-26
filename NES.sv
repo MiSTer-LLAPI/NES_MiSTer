@@ -172,6 +172,7 @@ parameter CONF_STR2 = {
 	"OM,Crosshairs,On,Off;",
 	"OA,Multitap,Disabled,Enabled;",
 	"OST,Serial Mode,None,SNAC,LLAPI;",
+	"H4OT,SNAC Zapper,Off,On;",
 `ifdef DEBUG_AUDIO
 	"-;",
 	"OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
@@ -326,7 +327,7 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
 	.joystick_analog_1(joy_analog1),
 
 	.status(status),
-	.status_menumask({(palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
+	.status_menumask({~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
 
 	.gamma_bus(gamma_bus),
 
@@ -499,6 +500,24 @@ reg [1:0] nes_ce;
 
 wire raw_serial = status[28];
 
+// Extend SNAC zapper high signal to be closer to original NES
+wire extend_serial_d4 = status[29];
+wire serial_d4 = extend_serial_d4 ? |serial_d4_sr : ~USER_IN[4];
+reg [7:0] serial_d4_sr;
+always @(posedge clk) begin
+    reg [17:0] clk_cnt;
+
+    clk_cnt <= clk_cnt + 1'b1;
+    serial_d4_sr[0] <= ~USER_IN[4];
+
+    // Shift every 10ms
+    if (clk_cnt == 18'd214772) begin
+        serial_d4_sr <= serial_d4_sr << 1;
+        clk_cnt <= 0;
+    end
+end
+
+
 // Indexes:
 // 0 = D+
 // 1 = D-
@@ -516,7 +535,7 @@ always_comb begin
 	if (raw_serial) begin
 		USER_OUT[0] = joypad_strobe;
 		USER_OUT[1] = ~joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
-		joy_data = {~USER_IN[4], ~USER_IN[2], ~joy_swap ? ~USER_IN[5] : joypad_bits2[0], ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
+		joy_data = {serial_d4, ~USER_IN[2], ~joy_swap ? ~USER_IN[5] : joypad_bits2[0], ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
 	end else if (llapi_select) begin
 		USER_OUT[0] = llapi_latch_o;
 		USER_OUT[1] = llapi_data_o;
