@@ -134,7 +134,7 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 // 0         1         2         3 
 // 01234567890123456789012345678901
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXXXXX XXXXXXXXXXXXXXXXXXXX
+// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -172,7 +172,7 @@ parameter CONF_STR2 = {
 	"OM,Crosshairs,On,Off;",
 	"OA,Multitap,Disabled,Enabled;",
 	"OST,Serial Mode,None,SNAC,LLAPI;",
-	"H4OQ,SNAC Zapper,Off,On;",
+	"H4OB,SNAC Zapper,Off,On;",
 `ifdef DEBUG_AUDIO
 	"-;",
 	"OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
@@ -499,7 +499,7 @@ reg [1:0] nes_ce;
 wire raw_serial = status[28];
 
 // Extend SNAC zapper high signal to be closer to original NES
-wire extend_serial_d4 = status[26];
+wire extend_serial_d4 = status[11];
 wire serial_d4 = extend_serial_d4 ? |serial_d4_sr : ~USER_IN[4];
 reg [7:0] serial_d4_sr;
 always @(posedge clk) begin
