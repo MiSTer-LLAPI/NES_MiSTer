@@ -172,6 +172,7 @@ parameter CONF_STR2 = {
 	"OM,Crosshairs,On,Off;",
 	"OA,Multitap,Disabled,Enabled;",
 	"OST,Serial Mode,None,SNAC,LLAPI;",
+	"H4OQ,SNAC Zapper,Off,On;",
 `ifdef DEBUG_AUDIO
 	"-;",
 	"OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
@@ -326,7 +327,7 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
 	.joystick_analog_1(joy_analog1),
 
 	.status(status),
-	.status_menumask({(palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
+	.status_menumask({~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
 
 	.gamma_bus(gamma_bus),
 
@@ -361,8 +362,6 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
 wire clock_locked;
 wire clk85;
 wire clk;
-
-assign SDRAM_CLK = ~clk85;
 
 pll pll
 (
@@ -498,6 +497,23 @@ wire fds_eject = swap_delay[2] | fds_swap_invert ? fds_btn : (clkcount[21] | fds
 reg [1:0] nes_ce;
 
 wire raw_serial = status[28];
+
+// Extend SNAC zapper high signal to be closer to original NES
+wire extend_serial_d4 = status[26];
+wire serial_d4 = extend_serial_d4 ? |serial_d4_sr : ~USER_IN[4];
+reg [7:0] serial_d4_sr;
+always @(posedge clk) begin
+    reg [17:0] clk_cnt;
+
+    clk_cnt <= clk_cnt + 1'b1;
+    serial_d4_sr[0] <= ~USER_IN[4];
+
+    // Shift every 10ms
+    if (clk_cnt == 18'd214772) begin
+        serial_d4_sr <= serial_d4_sr << 1;
+        clk_cnt <= 0;
+    end
+end
 
 // Indexes:
 // 0 = D+
@@ -904,16 +920,7 @@ end
 
 sdram sdram
 (
-	.SDRAM_DQ   ( SDRAM_DQ   ),
-	.SDRAM_A    ( SDRAM_A    ),
-	.SDRAM_DQML ( SDRAM_DQML ),
-	.SDRAM_DQMH ( SDRAM_DQMH ),
-	.SDRAM_BA   ( SDRAM_BA   ),
-	.SDRAM_nCS  ( SDRAM_nCS  ),
-	.SDRAM_nWE  ( SDRAM_nWE  ),
-	.SDRAM_nRAS ( SDRAM_nRAS ),
-	.SDRAM_nCAS ( SDRAM_nCAS ),
-	.SDRAM_CKE  ( SDRAM_CKE  ),
+	.*,
 
 	// system interface
 	.clk        ( clk85           ),
@@ -925,12 +932,14 @@ sdram sdram
 	.ch0_din    (  (downloading | loader_busy) ? loader_write_data_mem : ppu_dout  ),
 	.ch0_rd     ( ~(downloading | loader_busy)                         & ppu_read  ),
 	.ch0_dout   ( ppu_din   ),
+	.ch0_busy   ( ),
 
 	.ch1_addr   ( cpu_addr  ),
 	.ch1_wr     ( cpu_write ),
 	.ch1_din    ( cpu_dout  ),
 	.ch1_rd     ( cpu_read  ),
 	.ch1_dout   ( cpu_din   ),
+	.ch1_busy   ( ),
 
 	// reserved for backup ram save/load
 	.ch2_addr   ( {4'b1111, save_addr} ),
@@ -1093,12 +1102,11 @@ video video
 
 reg ce_out;
 always @(posedge CLK_VIDEO) begin : video_align
-	reg old_pix;
-	old_pix <= ce_pix;
-	ce_out <= 0;
+	reg div = 0;
 
-	if (~old_pix & ce_pix)
-		ce_out <= 1;
+	div <= ~div;
+	ce_out <= 0;
+	if (div & ce_pix) ce_out <= 1;
 end
 
 assign CE_PIXEL = ce_out;
