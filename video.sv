@@ -17,8 +17,6 @@ module video
 	input  [1:0] reticle,
 	input        pal_video,
 
-	output       vblank_out,
-
 	input        load_color,
 	input [14:0] load_color_data,
 	input  [5:0] load_color_index,
@@ -344,8 +342,6 @@ end
 wire  [4:0] vga_r = dark_r ? pixel[4:1] + pixel[4:2] : pixel[4:0];
 wire  [4:0] vga_g = dark_g ? pixel[9:6] + pixel[9:7] : pixel[9:5];
 wire  [4:0] vga_b = dark_b ? pixel[14:11] + pixel[14:12] : pixel[14:10];
-
-assign vblank_out = VBlank_r;
 
 video_mixer #(260, 0, 1) video_mixer
 (

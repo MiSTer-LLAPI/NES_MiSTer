@@ -1074,7 +1074,6 @@ assign VGA_SL = sl[1:0];
 
 wire [1:0] reticle;
 wire hold_reset;
-wire vblank;
 wire ce_pix;
 
 video video
@@ -1082,7 +1081,6 @@ video video
 	.*,
 	.clk(clk),
 	.reset(reset_nes),
-	.vblank_out(vblank),
 	.cnt(nes_ce),
 	.hold_reset(hold_reset),
 	.count_v(scanline),
