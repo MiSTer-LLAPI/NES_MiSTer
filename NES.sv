@@ -306,7 +306,7 @@ reg         ioctl_wait;
 
 wire [24:0] ps2_mouse;
 wire [15:0] joy_analog0, joy_analog1;
-wire  [7:0] paddle;
+wire  [7:0] paddle_usb;
 wire        forced_scandoubler;
 
 wire [21:0] gamma_bus;
@@ -326,7 +326,7 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
 	.joystick_3(joyD),
 	.joystick_analog_0(joy_analog0),
 	.joystick_analog_1(joy_analog1),
-	.paddle_0(paddle),
+	.paddle_0(paddle_usb),
 
 	.status(status),
 	.status_menumask({~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
@@ -644,6 +644,11 @@ wire use_llapi2 = llapi_en2 && llapi_select && (|llapi_type2 || llapi_button_pre
 wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
 wire use_llapi_gun2 = use_llapi2 && llapi_type2 == 8'd28;
 
+wire use_llapi_paddle = use_llapi && (llapi_type == 8'd41) || (llapi_type == 8'd42) ||  (llapi_type == 8'd30) || (llapi_type == 8'd7);
+wire use_llapi_paddle2 = use_llapi2 && (llapi_type2 == 8'd41) || (llapi_type2 == 8'd42) ||  (llapi_type2 == 8'd30) || (llapi_type2 == 8'd7);
+
+wire [7:0] paddle = use_llapi_paddle ? llapi_analog[63:56] : use_llapi_paddle2 ? llapi_analog2[63:56] : paddle_usb;
+
 // Indexes:
 // 0 = D+    = P1 Latch
 // 1 = D-    = P1 Data
@@ -656,12 +661,12 @@ wire [7:0] joy_ll_a;
 always_comb begin
         // if saturn controller, move select button to Z
         if (llapi_type == 8 || llapi_type == 3) begin
-            joy_ll_a = use_llapi_gun ? 8'd0 : {
+            joy_ll_a = use_llapi_gun ? 8'd0 : use_llapi_paddle ? {7'd0,llapi_buttons[0]} : {
                 llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
                 llapi_buttons[5],  llapi_buttons[6],  llapi_buttons[0],  llapi_buttons[1]
             };
         end else begin
-            joy_ll_a = use_llapi_gun ? 8'd0 : {
+            joy_ll_a = use_llapi_gun ? 8'd0 : use_llapi_paddle ? {7'd0,llapi_buttons[0]} : {
                 llapi_buttons[24], llapi_buttons[25], llapi_buttons[26], llapi_buttons[27],
                 llapi_buttons[5],  llapi_buttons[4],  llapi_buttons[0],  llapi_buttons[1]
             };
@@ -672,12 +677,12 @@ wire [7:0] joy_ll_b;
 always_comb begin
         // if saturn controller, move select button to Z
         if (llapi_type2 == 8 || llapi_type2 == 3) begin
-            joy_ll_b = use_llapi_gun2 ? 8'd0 : {
+            joy_ll_b = use_llapi_gun2 ? 8'd0 : use_llapi_paddle2 ? {7'd0,llapi_buttons2[0]} : {
                 llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
                 llapi_buttons2[5],  llapi_buttons2[6],  llapi_buttons2[0],  llapi_buttons2[1]
             };
         end else begin
-            joy_ll_b = use_llapi_gun2 ? 8'd0 : {
+            joy_ll_b = use_llapi_gun2 ? 8'd0 : use_llapi_paddle2 ? {7'd0,llapi_buttons2[0]} : {
                 llapi_buttons2[24], llapi_buttons2[25], llapi_buttons2[26], llapi_buttons2[27],
                 llapi_buttons2[5],  llapi_buttons2[4],  llapi_buttons2[0],  llapi_buttons2[1]
             };
@@ -705,7 +710,7 @@ always @(posedge clk) begin
 			               : {status[10] ? {8'h08, nes_joy_C} : 16'hFFFF, joy_swap ? nes_joy_B : nes_joy_A};
 			joypad_bits2 <= {status[10] ? {8'h04, nes_joy_D} : 16'hFFFF, joy_swap ? nes_joy_A : nes_joy_B};
 			powerpad_d4 <= paddle_en ? paddle_nes : {4'b0000, powerpad[7], powerpad[11], powerpad[2], powerpad[3]};
-			powerpad_d3 <= paddle_en ? {8{joyA[10]}} : {powerpad[6], powerpad[10], powerpad[9], powerpad[5], powerpad[8], powerpad[4], powerpad[0], powerpad[1]};
+			powerpad_d3 <= paddle_en ? {{8{joyA[10]}} | {8{llapi_buttons[0]}} | {8{llapi_buttons2[0]}}} : {powerpad[6], powerpad[10], powerpad[9], powerpad[5], powerpad[8], powerpad[4], powerpad[0], powerpad[1]};
 		end
 		if (!joypad_clock[0] && last_joypad_clock[0]) begin
 			joypad_bits <= {1'b0, joypad_bits[23:1]};
@@ -835,7 +840,7 @@ NES nes (
 	.joypad_strobe   (joypad_strobe),
 	.joypad_clock    (joypad_clock),
 	.joypad_data     (joy_data),
-	.vaus            ({paddle_en & powerpad_d4[0], paddle_en & joyA[10]}),
+	.vaus            ({paddle_en & powerpad_d4[0], paddle_en & (joyA[10] | llapi_buttons[0] | llapi_buttons2[0])}),
 	.mic             (mic),
 	.diskside_req    (diskside_req),
 	.diskside        (diskside),
