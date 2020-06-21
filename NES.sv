@@ -1,6 +1,6 @@
 // Copyright (c) 2012-2013 Ludvig Strigeus
 // This program is GPL Licensed. See COPYING for the full license.
-// 
+//
 // MiSTer port: Copyright (C) 2017,2018 Sorgelig
 
 module emu
@@ -33,7 +33,26 @@ module emu
 	output        VGA_VS,
 	output        VGA_DE,    // = ~(VBlank | HBlank)
 	output        VGA_F1,
-	output  [1:0] VGA_SL,
+	output [1:0]  VGA_SL,
+
+	/*
+	// Use framebuffer from DDRAM (USE_FB=1 in qsf)
+	// FB_FORMAT:
+	//    [2:0] : 011=8bpp(palette) 100=16bpp 101=24bpp 110=32bpp
+	//    [3]   : 0=16bits 565 1=16bits 1555
+	//    [4]   : 0=RGB  1=BGR (for 16/24/32 modes)
+	//
+	// FB_STRIDE either 0 (rounded to 256 bytes) or multiple of 16 bytes.
+
+	output        FB_EN,
+	output  [4:0] FB_FORMAT,
+	output [11:0] FB_WIDTH,
+	output [11:0] FB_HEIGHT,
+	output [31:0] FB_BASE,
+	output [13:0] FB_STRIDE,
+	input         FB_VBL,
+	input         FB_LL,
+	*/
 
 	output        LED_USER,  // 1 - ON, 0 - OFF.
 
@@ -48,9 +67,10 @@ module emu
 	// b[0]: osd button
 	output  [1:0] BUTTONS,
 
+	input         CLK_AUDIO, // 24.576 MHz
 	output [15:0] AUDIO_L,
 	output [15:0] AUDIO_R,
-	output        AUDIO_S, // 1 - signed audio samples, 0 - unsigned
+	output        AUDIO_S,   // 1 - signed audio samples, 0 - unsigned
 	output  [1:0] AUDIO_MIX, // 0 - no mix, 1 - 25%, 2 - 50%, 3 - 100% (mono)
 
 	//ADC
@@ -109,8 +129,8 @@ module emu
 
 assign ADC_BUS  = 'Z;
 
-assign AUDIO_S   = 1'b1;
-assign AUDIO_L   = |mute_cnt ? 16'd0 : sample_signed[15:0];
+assign AUDIO_S   = 0;
+assign AUDIO_L   = |mute_cnt ? 16'd0 : sample[15:0];
 assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
@@ -128,13 +148,11 @@ assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DD
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
 
-`define DEBUG_AUDIO
-
 // Status Bit Map:
-// 0         1         2         3          4         5         6 
+// 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXXXXXXXXXXXX  XXXXXXXXXXXX XXX
+// XXXXX XXXXX XXXXXXXXXXXXXX XXXXX XXX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -143,44 +161,49 @@ parameter CONF_STR = {
 	"H1F2,BIN,Load FDS BIOS;",
 	"-;",
 	"ONO,System Type,NTSC,PAL,Dendy;",
-	"-;",
 	"OG,Disk Swap ("
 	};
 parameter CONF_STR2 = {
-	"),Auto,FDS button;",	
-	"O5,Invert Mirroring,Off,On;",
+	"),Auto,FDS button;",
+	"OCF,Palette,Smooth,Unsat.,FCEUX,NES Classic,Composite,PC-10,PVM,Wavebeam,Real,Sony CXA,YUV,Greyscale,Rockman9,Ninten.,Custom;",
+	"H3F3,PAL,Custom Palette;",
 	"-;",
 	"C,Cheats;",
 	"H2OK,Cheats Enabled,On,Off;",
 	"-;",
-	"D0R6,Load Backup RAM;",
-	"D0R7,Save Backup RAM;",
-	"D0OH,Autosave,Off,On;",
+	"OH,Autosave,Off,On;",
+	"H5D0R6,Load Backup RAM;",
+	"H5D0R7,Save Backup RAM;",
 	"-;",
-	"O8,Aspect Ratio,4:3,16:9;",
-	"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
-	"O4,Hide Overscan,Off,On;",
-	"OQR,Mask Edges,Off,Left,Both,Auto;",
-	"OP,Extra Sprites,Off,On;",
-	"OCF,Palette,Smooth,Unsat.,FCEUX,NES Classic,Composite,PC-10,PVM,Wavebeam,Real,Sony CXA,YUV,Greyscale,Rockman9,Ninten.,Custom;",
-	"H3F3,PAL,Custom Palette;",
-	"-;",
-	"O9,Swap Joysticks,No,Yes;",
-	"o02,Periphery,None,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2),Vaus,Vaus(A-Trigger),Powerpad,Family Trainer;",
-	"OL,Zapper Trigger,Mouse,Joystick;",
-	"OM,Crosshairs,On,Off;",
-	"OA,Multitap,Disabled,Enabled;",
-	"OST,Serial Mode,None,SNAC,LLAPI;",
-	"H4OB,SNAC Zapper,Off,On;",
-`ifdef DEBUG_AUDIO
-	"-;",
-	"OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
-`endif
+	"P1,Audio & Video;",
+		"P1O8,Aspect Ratio,4:3,16:9;",
+		"P1O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+		"P1O4,Hide Overscan,Off,On;",
+		"P1ORS,Mask Edges,Off,Left,Both,Auto;",
+		"P1OP,Extra Sprites,Off,On;",
+		"P1-;",
+
+		"P1-;",
+		"P1OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
+	"P2,Input Options;",
+		"P2O9,Swap Joysticks,No,Yes;",
+		"P2OA,Multitap,Disabled,Enabled;",
+		"P2OIJ,Serial Mode,None,SNAC,LLAPI;",
+		"H4P2OT,SNAC Zapper,Off,On;",
+		"P2o02,Periphery,None,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2),Vaus,Vaus(A-Trigger),Powerpad,Family Trainer;",
+		"P2-;",
+		"P2OL,Zapper Trigger,Mouse,Joystick;",
+		"P2OM,Crosshairs,On,Off;",
 	"-;",
 	"R0,Reset;",
 	"J1,A,B,Select,Start,FDS,Mic,Zapper/Vaus Btn,PP/Mat 1,PP/Mat 2,PP/Mat 3,PP/Mat 4,PP/Mat 5,PP/Mat 6,PP/Mat 7,PP/Mat 8,PP/Mat 9,PP/Mat 10,PP/Mat 11,PP/Mat 12;",
 	"jn,A,B,Select,Start,L,,R|P;",
 	"jp,B,Y,Select,Start,L,,R|P;",
+	"I,",
+	"Disk 1A,",
+	"Disk 1B,",
+	"Disk 2A,",
+	"Disk 2B;",
 	"V,v",`BUILD_DATE
 };
 
@@ -190,22 +213,17 @@ wire [1:0] buttons;
 wire [63:0] status;
 
 wire arm_reset = status[0];
-wire mirroring_osd = status[5];
 wire pal_video = |status[24:23];
 wire hide_overscan = status[4] && ~pal_video;
 wire [3:0] palette2_osd = status[15:12];
 wire joy_swap = status[9] ^ (raw_serial || piano); // Controller on port 2 for Miracle Piano/SNAC
 wire fds_swap_invert = status[16];
-`ifdef DEBUG_AUDIO
 wire ext_audio = ~status[30];
 wire int_audio = ~status[31];
-`else
-wire ext_audio = 1;
-wire int_audio = 1;
-`endif
 
 // Figure out file types
 reg type_bios, type_fds, type_gg, type_nsf, type_nes, type_palette, is_bios, downloading;
+reg [24:0] rom_sz;
 
 always_ff @(posedge clk) begin
 	reg old_downld;
@@ -220,7 +238,7 @@ always_ff @(posedge clk) begin
 			2'b00: begin type_bios <= 1; is_bios <= 1; downloading <= ioctl_downloading; end
 			2'b01: begin type_nes <= 1; downloading <= ioctl_downloading; end
 			2'b10: begin type_fds <= 1; downloading <= ioctl_downloading; end
-			2'b11: begin type_nsf <= 1; downloading <= ioctl_downloading; end
+			2'b11: begin type_palette <= 1; end
 		endcase
 	else if(&filetype)
 		type_gg <= 1;
@@ -236,6 +254,7 @@ always_ff @(posedge clk) begin
 	end else if (filetype[1:0] == 2'b11)
 		type_palette <= 1;
 
+	if(old_downld && ~downloading & (type_fds|type_nsf|type_nes)) rom_sz <= ioctl_addr - 1'd1;
 end
 
 assign BUTTONS[0] = osd_btn || llapi_osd;
@@ -246,7 +265,7 @@ wire rom_loaded;
 reg osd_btn = 0;
 always @(posedge clk) begin : osd_block
 	integer timeout = 0;
-	
+
 	if(!RESET) begin
 		osd_btn <= 0;
 		if(timeout < 61000000) begin
@@ -257,20 +276,7 @@ always @(posedge clk) begin : osd_block
 	end
 end
 
-
-// Remove DC offset and convert to signed
-// At this CE rate, it also slightly lowers the bass to
-// better imitate the real high pass of the system.
-jt49_dcrm2 #(.sw(16)) dc_filter (
-	.clk  (clk),
-	.cen  (apu_ce & &filter_cnt),
-	.rst  (reset_nes),
-	.din  (sample),
-	.dout (sample_signed)
-);
-
 wire apu_ce;
-wire signed [15:0] sample_signed;
 
 reg [20:0] mute_cnt = 21'h1FFFFF;
 
@@ -280,13 +286,6 @@ always_ff @(posedge clk) begin
 		mute_cnt <= 21'h1FFFFF;
 	else if (|mute_cnt)
 		mute_cnt <= mute_cnt - 1'b1;
-end
-
-// Filter CE impacts frequency response
-reg [2:0] filter_cnt;
-always_ff @(posedge clk) begin
-	if (apu_ce)
-		filter_cnt<= filter_cnt + 1'b1;
 end
 
 reg  [31:0] sd_lba;
@@ -314,11 +313,11 @@ wire        forced_scandoubler;
 
 wire [21:0] gamma_bus;
 
-hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
+hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 2)) hps_io
 (
 	.clk_sys(clk),
 	.HPS_BUS(HPS_BUS),
-	.conf_str({CONF_STR, diskside==3?"3":diskside==2?"2":diskside==1?"1":"0", CONF_STR2}),
+	.conf_str({CONF_STR, diskside==3?"2B":diskside==2?"2A":diskside==1?"1B":"1A", CONF_STR2}),
 
 	.buttons(buttons),
 	.forced_scandoubler(forced_scandoubler),
@@ -335,7 +334,9 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
 	.paddle_3(pdl_usb[3]),
 
 	.status(status),
-	.status_menumask({~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
+	.status_menumask({status[17], ~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
+	.info_req(diskside_info),
+	.info({1'b0,diskside} + 3'd1),
 
 	.gamma_bus(gamma_bus),
 
@@ -362,7 +363,7 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 1)) hps_io
 	.ps2_kbd_led_status(0),
 
 	.ps2_mouse(ps2_mouse),
-	
+
 	.uart_mode(16'b000_11111_000_11111)
 );
 
@@ -510,7 +511,7 @@ wire fds_eject = swap_delay[2] | fds_swap_invert ? fds_btn : (clkcount[22] | fds
 
 reg [1:0] nes_ce;
 
-wire raw_serial = status[28];
+wire raw_serial = status[18];
 
 // Extend SNAC zapper high signal to be closer to original NES
 wire extend_serial_d4 = status[11];
@@ -608,7 +609,7 @@ wire [71:0] llapi_analog, llapi_analog2;
 wire [7:0]  llapi_type, llapi_type2;
 wire llapi_en, llapi_en2;
 
-wire llapi_select = status[29];
+wire llapi_select = status[19];
 
 LLAPI llapi
 (
@@ -739,7 +740,7 @@ always @(posedge clk) begin
 		old_pdl[i] <= pdl[i];
 		if($signed((pdl[i] - old_pdl[i])) > 4) num <= i[1:0];
 	end
-	
+
 	paddle <= pdl[num];
 end
 
@@ -768,12 +769,12 @@ always @(posedge clk) begin
 		end
 		if (!joypad_clock[0] && last_joypad_clock[0]) begin
 			joypad_bits <= {1'b0, joypad_bits[23:1]};
-		end	
+		end
 		if (!joypad_clock[1] && last_joypad_clock[1]) begin
 			joypad_bits2 <= {1'b0, joypad_bits2[23:1]};
 			joypad_d4 <= {~paddle_en, joypad_d4[7:1]};
 			joypad_d3 <= {1'b1, joypad_d3[7:1]};
-		end	
+		end
 		last_joypad_clock <= joypad_clock;
 	end
 end
@@ -804,7 +805,6 @@ GameLoader loader
 	.is_bios          ( is_bios           ), // boot0 bios
 	.indata           ( loader_input      ),
 	.indata_clk       ( loader_clk        ),
-	.invert_mirroring ( mirroring_osd     ),
 	.mem_addr         ( loader_addr       ),
 	.mem_data         ( loader_write_data ),
 	.mem_write        ( loader_write      ),
@@ -817,15 +817,7 @@ GameLoader loader
 	.rom_loaded       ( rom_loaded        )
 );
 
-reg [24:0] rom_sz;
-always @(posedge clk) begin : flags_block
-	reg done = 0;
-	
-	done <= loader_done;
-	if(~done & loader_done) rom_sz <= ioctl_addr - 1'd1;
-	
-	if (loader_done) mapper_flags <= loader_flags;
-end
+always @(posedge clk) if (loader_done) mapper_flags <= loader_flags;
 
 reg led_blink;
 always @(posedge clk) begin : blink_block
@@ -836,8 +828,8 @@ always @(posedge clk) begin : blink_block
 		led_blink <= ~led_blink;
 	end;
 end
- 
-wire reset_nes = 
+
+wire reset_nes =
 	~init_reset_n  ||
 	buttons[1]     ||
 	arm_reset      ||
@@ -861,12 +853,20 @@ wire light;
 
 wire [1:0] diskside_req;
 reg [1:0] diskside;
+reg       diskside_info;
+always @(posedge clk) begin
+	reg [1:0] old_diskside;
+	
+	old_diskside <= diskside;
+	diskside_info <= (old_diskside != diskside);
+end
 
 wire gg_reset = (type_fds | type_gg | type_nes | type_nsf) && ioctl_download;
 
 NES nes (
 	.clk             (clk),
 	.reset_nes       (reset_nes),
+	.cold_reset      (downloading & (type_fds | type_nes)),
 	.sys_type        (status[24:23]),
 	.nes_div         (nes_ce),
 	.mapper_flags    (downloading ? 32'd0 : mapper_flags),
@@ -947,7 +947,7 @@ dpram #("rtl/fdspatch.mif", 13) biospatch
 	.wren_a(bios_write),
 	.data_a(bios_data ^ loader_write_data),
 	.q_a(),
-	
+
 	.clock_b(clk),
 	.address_b(loader_addr[12:0]),
 	.q_b(bios_data)
@@ -1075,31 +1075,6 @@ always @(posedge clk) begin
 end
 
 ///////////////////////////////////////////////////
-
-wire hit_x = (9'h027 >= cycle && 9'h020 <= cycle);
-wire hit_y = (9'h0D7 >= scanline && 9'hD0 <= scanline);
-reg displayp;
-reg [1:0] disksidepixel;
-
-always @(posedge clk) begin
-if (reset_nes) begin
-	disksidepixel <= 0;
-	displayp <= 0;
-end else begin
-	if (swap_delay == {1'b0, ~clkcount[22:21]})
-		displayp = 1'b0;
-	if (swap_delay[2] || (fds_eject && fds_swap_invert))
-		displayp = 1'b1;
-	if (hit_x && hit_y && displayp)
-		disksidepixel[0] <= 1'b1;
-	else
-		disksidepixel[0] <= 1'b0;
-	
-	disksidepixel[1] <= ((cycle[0] == 1'b1) && (cycle[2:1] <= diskside));
-end
-end
-
-///////////////////////////////////////////////////
 // palette loader
 reg [14:0] pal_color;
 reg [5:0] pal_index;
@@ -1111,7 +1086,7 @@ always @(posedge clk) begin
 	if (ioctl_download && loader_clk && type_palette && ioctl_addr < 192) begin
 		pal_count <= pal_count == 2 ? 2'd0 : pal_count + 2'd1;
 		case (pal_count)
-			0: begin 
+			0: begin
 				pal_color[4:0] <= file_input[7:3];
 				//pal_write <= 0;
 				pal_index <= ioctl_addr > 0 ? pal_index + 1'd1 : pal_index;
@@ -1161,7 +1136,7 @@ video video
 	.load_color_data(pal_color),
 	.load_color_index(pal_index),
 	.emphasis(emphasis),
-	.reticle(displayp ? disksidepixel : ~status[22] ? reticle : 2'b00),
+	.reticle(~status[22] ? reticle : 2'b00),
 	.pal_video(pal_video),
 	.ce_pix(ce_pix)
 );
@@ -1204,7 +1179,7 @@ always_ff @(posedge clk) begin
 			8:  gg_code[39:32]   <= file_input;  // Compare Bottom Word
 			9:  gg_code[47:40]   <= file_input;  // Compare Bottom Word
 			10: gg_code[55:48]   <= file_input;  // Compare top Word
-			11: gg_code[63:56]   <= file_input;  // Compare top Word                                       
+			11: gg_code[63:56]   <= file_input;  // Compare top Word
 			12: gg_code[7:0]     <= file_input;  // Replace Bottom Word
 			13: gg_code[15:8]    <= file_input;  // Replace Bottom Word
 			14: gg_code[23:16]   <= file_input;  // Replace Top Word
@@ -1224,7 +1199,7 @@ reg [1:0] last_diskside = 2'd3;
 always @(posedge clk) begin
 	old_downloading <= downloading;
 	if(~old_downloading & downloading) bk_ena <= 0;
-	
+
 	//Save file always mounted in the end of downloading state.
 	if(downloading && img_mounted && !img_readonly) bk_ena <= 1;
 	if(~bk_ena && loader_write_triggered) last_diskside <= loader_addr_mem[17:16];
@@ -1250,7 +1225,7 @@ mystate bk_state = S_IDLE;
 always @(posedge clk) begin : save_block
 	reg old_load = 0, old_save = 0, old_ack;
 	reg old_downloading = 0;
-	
+
 	old_downloading <= downloading;
 
 	old_load <= bk_load & bk_ena;
@@ -1258,7 +1233,7 @@ always @(posedge clk) begin : save_block
 	old_ack  <= sd_ack;
 	fds_busy <= (bk_state != S_IDLE) || bk_request;
 	old_fds_btn <= fds_btn;
-	
+
 	if(~old_ack & sd_ack) {sd_rd, sd_wr} <= 0;
 	if (swap_delay == {1'b1, clkcount[22:21]}) begin
 		swap_delay[2] <= 0;
@@ -1274,7 +1249,7 @@ always @(posedge clk) begin : save_block
 		if((~old_load & bk_load) | (~old_save & bk_save)) begin
 			bk_loading <= bk_load;
 			bk_request <= 1;
-		end else if((diskside_req_use != diskside) && ~downloading && ~bk_request && fds) begin		
+		end else if((diskside_req_use != diskside) && ~downloading && ~bk_request && fds) begin
 			diskside <= diskside_req_use;
 			swap_delay <= {1'b1, ~clkcount[22:21]};
 		end
@@ -1320,7 +1295,6 @@ module GameLoader
 	input         is_bios,
 	input   [7:0] indata,
 	input         indata_clk,
-	input         invert_mirroring,
 	output reg [21:0] mem_addr,
 	output [7:0]  mem_data,
 	output        mem_write,
@@ -1341,7 +1315,7 @@ reg [7:0] prgsize;
 reg [3:0] ctr;
 reg [7:0] ines[0:15]; // 16 bytes of iNES header
 reg [21:0] bytes_left;
-  
+
 wire [7:0] prgrom = ines[4];	// Number of 16384 byte program ROM pages
 wire [7:0] chrrom = ines[5];	// Number of 8192 byte character ROM pages (0 indicates CHR RAM)
 wire [3:0] chrram = ines[11][3:0]; // NES 2.0 CHR-RAM size shift count (64 << count)
@@ -1384,7 +1358,7 @@ wire [2:0] prg_size = prgrom <= 1  ? 3'd0 :		// 16KB
                       prgrom <= 16 ? 3'd4 : 		// 256KB
                       prgrom <= 32 ? 3'd5 : 		// 512KB
                       prgrom <= 64 ? 3'd6 : 3'd7;// 1MB/2MB
-                        
+
 wire [2:0] chr_size = chrrom <= 1  ? 3'd0 : 		// 8KB
                       chrrom <= 2  ? 3'd1 : 		// 16KB
                       chrrom <= 4  ? 3'd2 : 		// 32KB
@@ -1392,7 +1366,7 @@ wire [2:0] chr_size = chrrom <= 1  ? 3'd0 : 		// 8KB
                       chrrom <= 16 ? 3'd4 : 		// 128KB
                       chrrom <= 32 ? 3'd5 : 		// 256KB
                       chrrom <= 64 ? 3'd6 : 3'd7;// 512KB/1MB
-  
+
 // differentiate dirty iNES1.0 headers from proper iNES2.0 ones
 wire is_dirty = !is_nes20 && ((ines[9][7:1] != 0)
 								  || (ines[10] != 0)
@@ -1413,7 +1387,7 @@ wire has_saves = ines[6][1];
 // ines[6][3] is 4 screen mode
 // ines[8][7:4] is NES 2.0 submapper
 // ines[10][3:0] is NES 2.0 PRG RAM shift size (64 << size)
-assign mapper_flags = {1'b0, piano, prgram, has_saves, ines2mapper, ines[6][3], has_chr_ram, ines[6][0] ^ invert_mirroring, chr_size, prg_size, mapper};
+assign mapper_flags = {1'b0, piano, prgram, has_saves, ines2mapper, ines[6][3], has_chr_ram, ines[6][0], chr_size, prg_size, mapper};
 
 reg [3:0] clearclk; //Wait for SDRAM
 reg copybios;
