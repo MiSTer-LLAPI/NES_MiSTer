@@ -659,8 +659,9 @@ end
 
 // controller id is 0 if there is either an Atari controller or no controller
 // if id is 0, assume there is no controller until a button is pressed
-wire use_llapi = llapi_en && llapi_select && (|llapi_type || llapi_button_pressed);
-wire use_llapi2 = llapi_en2 && llapi_select && (|llapi_type2 || llapi_button_pressed2);
+// also check for 255 and treat that as no controller as well
+wire use_llapi  = llapi_en  && llapi_select && ((|llapi_type  && ~(&llapi_type))  || llapi_button_pressed);
+wire use_llapi2 = llapi_en2 && llapi_select && ((|llapi_type2 && ~(&llapi_type2)) || llapi_button_pressed2);
 
 wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
 wire use_llapi_gun2 = use_llapi2 && llapi_type2 == 8'd28;
