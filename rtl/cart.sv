@@ -23,7 +23,7 @@ module cart_top (
 	input      [19:0] ppuflags,       // Misc flags from PPU for MMC5 cheating
 	input      [31:0] flags,          // Misc flags from ines header {prg_size(3), chr_size(3), mapper(8)}
 	input      [15:0] prg_ain,        // Better known as "CPU Address in"
-	output reg [21:0] prg_aout,       // PRG Input / Output Address Lines
+	output reg [24:0] prg_aout,       // PRG Input / Output Address Lines ([25:22] extended Lines [Misc ROM])
 	input             prg_read,       // PRG Read / write signals
 	input             prg_write,
 	input       [7:0] prg_din,        // CPU Data In
@@ -66,6 +66,7 @@ tri0 [15:0] flags_out_b, audio_out_b;
 tri1 [7:0] prg_dout_b, chr_dout_b;
 
 wire [13:0] chr_ain = chr_ex ? chr_ain_ex : chr_ain_orig;
+wire [2:0] prg_aoute_m413;
 
 // This mapper used to be default if no other mapper was found
 // It seems MMC0 is handled by map28. Does it have any purpose?
@@ -256,15 +257,15 @@ MMC2 mmc2(
 
 //*****************************************************************************//
 // Name   : MMC3                                                               //
-// Mappers: 4, 33, 37, 47, 48, 74, 76, 80, 82, 88, 95, 112, 118, 119, 154, 191,//
-//          192, 194, 195, 206, 207                                            //
+// Mappers: 4, 33, 37, 47, 48, 74, 76, 80, 82, 88, 95, 112, 118, 119, 154, 189,//
+//          191, 192, 194, 195, 206, 207                                       //
 // Status : Working -- Blaarg IRQ timing test fails, but may be submapper      //
 // Notes  : While currently working well, this mapper could use a full review. //
 // Games  : Crystalis, Battletoads                                             //
 //*****************************************************************************//
 wire mmc3_en = me[118] | me[119] | me[47] | me[206] | me[112] | me[88] | me[154] | me[95]
 	| me[76] | me[80] | me[82] | me[207] | me[48] | me[33] | me[37] | me[74] | me[191]
-	| me[192] | me[194] | me[195] | me[4];
+	| me[192] | me[194] | me[195] | me[4] | me[189];
 
 MMC3 mmc3 (
 	.clk        (clk),
@@ -1634,6 +1635,40 @@ JYCompany jycompany(
 );
 
 //*****************************************************************************//
+// Name   : Mapper 91                                                          //
+// Mappers: 91                                                                 //
+// Status : Working (Needs testing)                                            //
+// Notes  :                                                                    //
+// Games  : Street Fighter 3, Mortal Kombat II, Dragon Ball Z 2,               //
+//          Mario & Sonic 2,  Mario Rider,                                     //
+//          1995 Super HIK 4-in-1 (JY-016), 1995 Super HiK 4-in-1 (JY-017)     //
+//*****************************************************************************//
+Mapper91 map91(
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[91]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b),
+	.chr_ain_o  (chr_ain_orig)
+);
+
+//*****************************************************************************//
 // Name   : Mapper 225                                                         //
 // Mappers: 225, 255                                                           //
 // Status : Working                                                            //
@@ -1662,6 +1697,40 @@ Mapper225 map225(
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b)
+);
+
+//*****************************************************************************//
+// Name   : Mapper 413                                                         //
+// Mappers: 413                                                                //
+// Status : Working                                                            //
+// Notes  :                                                                    //
+// Games  : Super Russian Roulette                                             //
+//*****************************************************************************//
+Mapper413 map413 (
+	.clk        (clk),
+	.ce         (ppu_ce), // PPU CE
+	.enable     (me[413]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b),
+	// Special ports
+	.chr_ain_o  (chr_ain_orig),
+	.prg_aoute  (prg_aoute_m413)
 );
 
 //*****************************************************************************//
@@ -1824,19 +1893,22 @@ vrc6_mixed snd_vrc6 (
 );
 
 
-wire [255:0] me;
+wire [1023:0] me;
 
 always @* begin
-	me = 256'd0;
-	me[flags[7:0]] = 1'b1;
+	me = 1024'd0;
+	me[{flags[18:17],flags[7:0]}] = 1'b1;
 
 	// Mapper output to cart pins
-	{prg_aout,   prg_allow,   chr_aout,   vram_a10,   vram_ce,   chr_allow,   prg_dout,   chr_dout,   irq,   audio} =
-	{prg_addr_b, prg_allow_b, chr_addr_b, vram_a10_b, vram_ce_b, chr_allow_b, prg_dout_b, chr_dout_b, irq_b, audio_out_b};
+	{prg_aout[21:0], prg_allow,   chr_aout,   vram_a10,   vram_ce,   chr_allow,   prg_dout,   chr_dout,   irq,   audio} =
+	{prg_addr_b,     prg_allow_b, chr_addr_b, vram_a10_b, vram_ce_b, chr_allow_b, prg_dout_b, chr_dout_b, irq_b, audio_out_b};
 
 	// Currently only used for Mapper 16 EEPROM. Expand if needed.
 	{mapper_addr, mapper_data_out, mapper_prg_write, mapper_ovr} = (me[159] | me[16]) ?
 		{map16_mapper_addr, map16_data_out, map16_prg_write, map16_ovr} : 28'd0;
+		
+	// Currently only used for Mapper 413 Misc ROM. Expand if needed.
+	prg_aout[24:22] = me[413] ? prg_aoute_m413 : 3'd0;
 
 	{diskside_auto} = {fds_diskside_auto};
 
@@ -1844,7 +1916,7 @@ always @* begin
 	{prg_conflict, prg_bus_write, has_chr_dout} = {flags_out_b[2], flags_out_b[1], flags_out_b[0]};
 
 	// Address translation for SDRAM
-	if (prg_aout[21] == 1'b0)
+	if ((prg_aout[21] == 1'b0) && (prg_aout[24] == 1'b0))
 		prg_aout[20:0] = (prg_aout[20:0] & prg_mask);
 
 	if (chr_aout[21:20] == 2'b10)

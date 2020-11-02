@@ -23,8 +23,8 @@ module emu
 	output        CE_PIXEL,
 
 	//Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
-	output  [7:0] VIDEO_ARX,
-	output  [7:0] VIDEO_ARY,
+	output [11:0] VIDEO_ARX,
+	output [11:0] VIDEO_ARY,
 
 	output  [7:0] VGA_R,
 	output  [7:0] VGA_G,
@@ -139,8 +139,8 @@ assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS [1] = 0;
 
-assign VIDEO_ARX = status[8] ? 8'd16 : (hide_overscan ? 8'd64 : 8'd128);
-assign VIDEO_ARY = status[8] ? 8'd9  : (hide_overscan ? 8'd49 : 8'd105);
+assign VIDEO_ARX = (!status[19:18]) ? (hide_overscan ? 12'd64 : 12'd128) : (status[19:18] - 1'd1);
+assign VIDEO_ARY = (!status[19:18]) ? (hide_overscan ? 12'd49 : 12'd105) : 12'd0;
 
 assign VGA_F1 = 0;
 //assign {UART_RTS, UART_TXD, UART_DTR} = 0;
@@ -152,7 +152,7 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 // 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXX XXXXX XXXXXXXXXXXXXX XXXXX XXX
+// XXXXX XX XX XXXXXXXXXXXXXXXXXXXX XXX                           XX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -163,6 +163,7 @@ parameter CONF_STR = {
 	"ONO,System Type,NTSC,PAL,Dendy;",
 	"OG,Disk Swap ("
 	};
+
 parameter CONF_STR2 = {
 	"),Auto,FDS button;",
 	"OCF,Palette,Smooth,Unsat.,FCEUX,NES Classic,Composite,PC-10,PVM,Wavebeam,Real,Sony CXA,YUV,Greyscale,Rockman9,Ninten.,Custom;",
@@ -175,25 +176,28 @@ parameter CONF_STR2 = {
 	"H5D0R6,Load Backup RAM;",
 	"H5D0R7,Save Backup RAM;",
 	"-;",
-	"P1,Audio & Video;",
-		"P1O8,Aspect Ratio,4:3,16:9;",
-		"P1O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
-		"P1O4,Hide Overscan,Off,On;",
-		"P1ORS,Mask Edges,Off,Left,Both,Auto;",
-		"P1OP,Extra Sprites,Off,On;",
-		"P1-;",
 
-		"P1-;",
-		"P1OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
+	"P1,Audio & Video;",
+	"P1-;",
+	"P1OIJ,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P1O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"P1O4,Hide Overscan,Off,On;",
+	"P1ORS,Mask Edges,Off,Left,Both,Auto;",
+	"P1OP,Extra Sprites,Off,On;",
+	"P1-;",
+	"P1OUV,Audio Enable,Both,Internal,Cart Expansion,None;",
+
 	"P2,Input Options;",
-		"P2O9,Swap Joysticks,No,Yes;",
-		"P2OA,Multitap,Disabled,Enabled;",
-		"P2OIJ,Serial Mode,None,SNAC,LLAPI;",
-		"H4P2OT,SNAC Zapper,Off,On;",
-		"P2o02,Periphery,None,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2),Vaus,Vaus(A-Trigger),Powerpad,Family Trainer;",
-		"P2-;",
-		"P2OL,Zapper Trigger,Mouse,Joystick;",
-		"P2OM,Crosshairs,On,Off;",
+	"P2-;",
+	"P2O9,Swap Joysticks,No,Yes;",
+	"P2OA,Multitap,Disabled,Enabled;",
+	"P2oUV,Serial Mode,None,SNAC,LLAPI;",
+	"H4P2OT,SNAC Zapper,Off,On;",
+	"P2o02,Periphery,None,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2),Vaus,Vaus(A-Trigger),Powerpad,Family Trainer;",
+	"P2-;",
+	"P2OL,Zapper Trigger,Mouse,Joystick;",
+	"P2OM,Crosshairs,On,Off;",
+
 	"-;",
 	"R0,Reset;",
 	"J1,A,B,Select,Start,FDS,Mic,Zapper/Vaus Btn,PP/Mat 1,PP/Mat 2,PP/Mat 3,PP/Mat 4,PP/Mat 5,PP/Mat 6,PP/Mat 7,PP/Mat 8,PP/Mat 9,PP/Mat 10,PP/Mat 11,PP/Mat 12;",
@@ -511,7 +515,7 @@ wire fds_eject = swap_delay[2] | fds_swap_invert ? fds_btn : (clkcount[22] | fds
 
 reg [1:0] nes_ce;
 
-wire raw_serial = status[18];
+wire raw_serial = status[62];
 
 // Extend SNAC zapper high signal to be closer to original NES
 wire extend_serial_d4 = status[11];
@@ -609,7 +613,7 @@ wire [71:0] llapi_analog, llapi_analog2;
 wire [7:0]  llapi_type, llapi_type2;
 wire llapi_en, llapi_en2;
 
-wire llapi_select = status[19];
+wire llapi_select = status[63];
 
 LLAPI llapi
 (
@@ -784,7 +788,7 @@ end
 wire [7:0] file_input;
 wire [7:0] loader_input = (loader_busy && !downloading) ? !nsf ? bios_data : nsf_data : file_input;
 wire       loader_clk;
-wire [21:0] loader_addr;
+wire [24:0] loader_addr;
 wire [7:0] loader_write_data;
 reg loader_reset;
 wire loader_write;
@@ -921,7 +925,8 @@ NES nes (
 	.save_written    (save_written)
 );
 
-wire [21:0] cpu_addr, ppu_addr;
+wire [24:0] cpu_addr;
+wire [21:0] ppu_addr;
 wire        cpu_read, cpu_write, ppu_read, ppu_write;
 wire  [7:0] cpu_dout, cpu_din, ppu_dout, ppu_din;
 
@@ -965,7 +970,7 @@ spram #(12, 8, "rtl/loopy_NSF.mif") nsfplayrom
 // loader_write -> clock when data available
 reg loader_write_mem;
 reg [7:0] loader_write_data_mem;
-reg [21:0] loader_addr_mem;
+reg [24:0] loader_addr_mem;
 
 reg loader_write_triggered;
 
@@ -996,7 +1001,7 @@ sdram sdram
 	.init       ( !clock_locked   ),
 
 	// cpu/chipset interface
-	.ch0_addr   (  (downloading | loader_busy) ? loader_addr_mem       : ppu_addr  ),
+	.ch0_addr   (  (downloading | loader_busy) ? loader_addr_mem       : {3'b0, ppu_addr}  ),
 	.ch0_wr     (                                loader_write_mem      | ppu_write ),
 	.ch0_din    (  (downloading | loader_busy) ? loader_write_data_mem : ppu_dout  ),
 	.ch0_rd     ( ~(downloading | loader_busy)                         & ppu_read  ),
@@ -1011,7 +1016,7 @@ sdram sdram
 	.ch1_busy   ( ),
 
 	// reserved for backup ram save/load
-	.ch2_addr   ( {4'b1111, save_addr} ),
+	.ch2_addr   ( {7'b0001111, save_addr} ),
 	.ch2_wr     ( save_wr ),
 	.ch2_din    ( sd_buff_dout ),
 	.ch2_rd     ( save_rd ),
@@ -1077,7 +1082,7 @@ end
 
 ///////////////////////////////////////////////////
 // palette loader
-reg [14:0] pal_color;
+reg [23:0] pal_color;
 reg [5:0] pal_index;
 reg [1:0] pal_count;
 
@@ -1088,17 +1093,17 @@ always @(posedge clk) begin
 		pal_count <= pal_count == 2 ? 2'd0 : pal_count + 2'd1;
 		case (pal_count)
 			0: begin
-				pal_color[4:0] <= file_input[7:3];
+				pal_color[23:16] <= file_input;
 				//pal_write <= 0;
 				pal_index <= ioctl_addr > 0 ? pal_index + 1'd1 : pal_index;
 			end
 
 			1: begin
-				pal_color[9:5] <= file_input[7:3];
+				pal_color[15:8] <= file_input;
 			end
 
 			2: begin
-				pal_color[14:10] <= file_input[7:3];
+				pal_color[7:0] <= file_input;
 				//pal_write <= 1;
 			end
 		endcase
@@ -1296,7 +1301,7 @@ module GameLoader
 	input         is_bios,
 	input   [7:0] indata,
 	input         indata_clk,
-	output reg [21:0] mem_addr,
+	output reg [24:0] mem_addr,
 	output [7:0]  mem_data,
 	output        mem_write,
 	output [31:0] mapper_flags,
@@ -1315,7 +1320,7 @@ end
 reg [7:0] prgsize;
 reg [3:0] ctr;
 reg [7:0] ines[0:15]; // 16 bytes of iNES header
-reg [21:0] bytes_left;
+reg [24:0] bytes_left;
 
 wire [7:0] prgrom = ines[4];	// Number of 16384 byte program ROM pages
 wire [7:0] chrrom = ines[5];	// Number of 8192 byte character ROM pages (0 indicates CHR RAM)
@@ -1323,7 +1328,7 @@ wire [3:0] chrram = ines[11][3:0]; // NES 2.0 CHR-RAM size shift count (64 << co
 wire has_chr_ram = ~is_nes20 ? (chrrom == 0) : |chrram;
 
 assign mem_data = (state == S_CLEARRAM || (~copybios && state == S_COPYBIOS)) ? 8'h00 : indata;
-assign mem_write = (((bytes_left != 0) && (state == S_LOADPRG || state == S_LOADCHR)
+assign mem_write = (((bytes_left != 0) && (state == S_LOADPRG || state == S_LOADCHR || state == S_LOADEXTRA)
                     || (downloading && (state == S_LOADHEADER || state == S_LOADFDS || state == S_LOADNSFH || state == S_LOADNSFD))) && indata_clk)
 						 || ((bytes_left != 0) && ((state == S_CLEARRAM) || (state == S_COPYBIOS) || (state == S_COPYPLAY)) && clearclk == 4'h2);
 
@@ -1393,7 +1398,7 @@ assign mapper_flags = {1'b0, piano, prgram, has_saves, ines2mapper, ines[6][3], 
 reg [3:0] clearclk; //Wait for SDRAM
 reg copybios;
 
-typedef enum bit [3:0] { S_LOADHEADER, S_LOADPRG, S_LOADCHR, S_LOADFDS, S_ERROR, S_CLEARRAM, S_COPYBIOS, S_LOADNSFH, S_LOADNSFD, S_COPYPLAY, S_DONE } mystate;
+typedef enum bit [3:0] { S_LOADHEADER, S_LOADPRG, S_LOADCHR, S_LOADEXTRA, S_LOADFDS, S_ERROR, S_CLEARRAM, S_COPYBIOS, S_LOADNSFH, S_LOADNSFD, S_COPYPLAY, S_DONE } mystate;
 mystate state;
 
 wire type_bios = filetype[0];
@@ -1410,9 +1415,9 @@ always @(posedge clk) begin
 		busy <= 0;
 		done <= 0;
 		ctr <= 0;
-		mem_addr <= type_fds ? 22'b11_1100_0000_0000_0001_0000 :
-		            type_nsf ? 22'b00_0000_0000_0001_0000_0000   // Address for NSF Header (0x80 bytes)
-									: 22'b00_0000_0000_0000_0000_0000;  // Address for FDS : BIOS/PRG
+		mem_addr <= type_fds ? 25'b0_0011_1100_0000_0000_0001_0000 :
+		            type_nsf ? 25'b0_0000_0000_0000_0001_0000_0000   // Address for NSF Header (0x80 bytes)
+									: 25'b0_0000_0000_0000_0000_0000_0000;  // Address for FDS : BIOS/PRG
 		copybios <= 0;
 	end else begin
 		case(state)
@@ -1432,16 +1437,16 @@ always @(posedge clk) begin
 					state <= S_LOADPRG;
 				 //FDS
 				 end else if ((ines[0] == 8'h46) && (ines[1] == 8'h44) && (ines[2] == 8'h53) && (ines[3] == 8'h1A)) begin
-					mem_addr <= 22'b11_1100_0000_0000_0001_0000;  // Address for FDS skip Header
+					mem_addr <= 25'b0_0011_1100_0000_0000_0001_0000;  // Address for FDS skip Header
 					state <= S_LOADFDS;
 					bytes_left <= 21'b1;
 				 end else if (type_bios) begin // Bios
 					state <= S_LOADFDS;
-					mem_addr <= 22'b00_0000_0000_0000_0001_0000;  // Address for BIOS skip Header
+					mem_addr <= 25'b0_0000_0000_0000_0000_0001_0000;  // Address for BIOS skip Header
 					bytes_left <= 21'b1;
 				 end else if(type_fds) begin // FDS
 					state <= S_LOADFDS;
-					mem_addr <= 22'b11_1100_0000_0000_0010_0000;  // Address for FDS no Header
+					mem_addr <= 25'b0_0011_1100_0000_0000_0010_0000;  // Address for FDS no Header
 					bytes_left <= 21'b1;
 				 end else if(type_nsf) begin // NFS
 					state <= S_LOADNSFH;
@@ -1461,9 +1466,22 @@ always @(posedge clk) begin
 				end
 			 end else if (state == S_LOADPRG) begin
 				state <= S_LOADCHR;
-				mem_addr <= 22'b10_0000_0000_0000_0000_0000; // Address for CHR
+				mem_addr <= 25'b0_0010_0000_0000_0000_0000_0000; // Address for CHR
 				bytes_left <= chr_size2;
 			 end else if (state == S_LOADCHR) begin
+				state <= S_LOADEXTRA;
+				mem_addr <= 25'b1_0000_0000_0000_0000_0000_0000; // Address for Extra
+				//Replace with calculation based on file size requires actual file size?
+				bytes_left <= ({ines2mapper[1:0],mapper} == 10'd413) ? 25'b0_1000_0000_0000_0000_0000_0000 : 25'd0;
+			 end
+			end
+		S_LOADEXTRA: begin
+			 if (downloading &&  bytes_left != 0) begin
+				if (indata_clk) begin
+				  bytes_left <= bytes_left - 1'd1;
+				  mem_addr <= mem_addr + 1'd1;
+				end
+			 end else begin
 				done <= 1;
 				busy <= 0;
 			 end
@@ -1479,9 +1497,9 @@ always @(posedge clk) begin
 				  mem_addr <= mem_addr + 1'd1;
 				end
 			 end else begin
-//				mem_addr <= 22'b11_1000_0000_0000_0000_0000;
+//				mem_addr <= 25'b0_0011_1000_0000_0000_0000_0000;
 //				bytes_left <= 21'h800;
-				mem_addr <= 22'b11_1000_0000_0001_0000_0010; // FDS - Clear these two RAM addresses to restart BIOS
+				mem_addr <= 25'b0_0011_1000_0000_0001_0000_0010; // FDS - Clear these two RAM addresses to restart BIOS
 				bytes_left <= 21'h2;
 				ines[4] <= 8'h80;//no masking
 				ines[5] <= 8'h00;//0x2000
@@ -1508,7 +1526,7 @@ always @(posedge clk) begin
 					mem_addr <= mem_addr + 1'd1;
 				end
 			 end else begin
-				mem_addr <= 22'b00_0000_0000_0000_0000_0000;
+				mem_addr <= 25'b0_0000_0000_0000_0000_0000_0000;
 				bytes_left <= 21'h2000;
 				state <= S_COPYBIOS;
 				clearclk <= 4'h0;
@@ -1533,8 +1551,8 @@ always @(posedge clk) begin
 				end
 			 end else begin
 				state <= S_LOADNSFD;
-				//mem_addr <= {22'b01_0000_0000_0000_0000_0000; // Address for NSF Data
-				mem_addr <= {10'b01_0000_0000,ines[9][3:0],ines[8]};//_0000_0000_0000; // Address for NSF Data
+				//mem_addr <= {25'b0_0001_0000_0000_0000_0000_0000; // Address for NSF Data
+				mem_addr <= {13'b0_0001_0000_0000,ines[9][3:0],ines[8]};//_0000_0000_0000; // Address for NSF Data
 				bytes_left <= 21'b1;
 			 end
 			end
@@ -1544,7 +1562,7 @@ always @(posedge clk) begin
 				  mem_addr <= mem_addr + 1'd1;
 				end
 			 end else begin
-				mem_addr <= 22'b00_0000_0000_0001_1000_0000; // Address for NSF Player (0x180)
+				mem_addr <= 25'b0_0000_0000_0000_0001_1000_0000; // Address for NSF Player (0x180)
 				bytes_left <= 21'h0E80;
 				ines[4] <= 8'h80;//no masking
 				ines[5] <= 8'h00;//no CHR ROM
