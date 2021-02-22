@@ -23,8 +23,9 @@ module emu
 	output        CE_PIXEL,
 
 	//Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
-	output [11:0] VIDEO_ARX,
-	output [11:0] VIDEO_ARY,
+	//if VIDEO_ARX[12] or VIDEO_ARY[12] is set then [11:0] contains scaled size instead of aspect ratio.
+	output [12:0] VIDEO_ARX,
+	output [12:0] VIDEO_ARY,
 
 	output  [7:0] VGA_R,
 	output  [7:0] VGA_G,
@@ -35,6 +36,9 @@ module emu
 	output        VGA_F1,
 	output [1:0]  VGA_SL,
 	output        VGA_SCALER, // Force VGA scaler
+
+	input  [11:0] HDMI_WIDTH,
+	input  [11:0] HDMI_HEIGHT,
 
 `ifdef USE_FB
 	// Use framebuffer in DDRAM (USE_FB=1 in qsf)
@@ -156,7 +160,7 @@ module emu
 assign ADC_BUS  = 'Z;
 
 assign AUDIO_S   = 0;
-assign AUDIO_L   = |mute_cnt ? 16'd0 : sample[15:0];
+assign AUDIO_L   = sample[15:0];
 assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
@@ -166,20 +170,38 @@ assign LED_POWER = 0;
 assign BUTTONS [1] = 0;
 assign VGA_SCALER = 0;
 
-assign VIDEO_ARX = (!status[19:18]) ? (hide_overscan ? 12'd64 : 12'd128) : (status[19:18] - 1'd1);
-assign VIDEO_ARY = (!status[19:18]) ? (hide_overscan ? 12'd49 : 12'd105) : 12'd0;
-
 assign VGA_F1 = 0;
 //assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
+wire [1:0] ar       = status[19:18];
+wire       vcrop_en = status[5];
+wire [3:0] vcopt    = status[38:35];
+reg        en216p;
+reg  [4:0] voff;
+always @(posedge CLK_VIDEO) begin
+	en216p <= ((HDMI_WIDTH == 1920) && (HDMI_HEIGHT == 1080) && !forced_scandoubler && !scale);
+	voff <= (vcopt < 6) ? {vcopt,1'b0} : ({vcopt,1'b0} - 5'd24);
+end
+
+wire vga_de;
+video_freak video_freak
+(
+	.*,
+	.VGA_DE_IN(vga_de),
+	.ARX((!ar) ? (hide_overscan ? 12'd64 : 12'd128) : (ar - 1'd1)),
+	.ARY((!ar) ? (hide_overscan ? 12'd49 : 12'd105) : 12'd0),
+	.CROP_SIZE((en216p & vcrop_en) ? 10'd216 : 10'd0),
+	.CROP_OFF(voff),
+	.SCALE(status[40:39])
+);
 
 // Status Bit Map:
 // 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXX XX XX XXXXXXXXXXXXXXXXXXXX XXX                           XX
+// XXXXXXXX XX XXXXXXXXXXXXXXXXXXXX XXXXXXXXX                     XX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -208,6 +230,11 @@ parameter CONF_STR2 = {
 	"P1-;",
 	"P1OIJ,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"P1O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"P1-;",
+	"d6P1O5,Vertical Crop,Disabled,216p(5x);",
+	"d6P1o36,Crop Offset,0,2,4,8,10,12,-12,-10,-8,-6,-4,-2;",
+	"P1o78,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"P1-;",
 	"P1O4,Hide Overscan,Off,On;",
 	"P1ORS,Mask Edges,Off,Left,Both,Auto;",
 	"P1OP,Extra Sprites,Off,On;",
@@ -309,16 +336,6 @@ end
 
 wire apu_ce;
 
-reg [20:0] mute_cnt = 21'h1FFFFF;
-
-// Pause audio to avoid loud "POP"
-always_ff @(posedge clk) begin
-	if (reset_nes)
-		mute_cnt <= 21'h1FFFFF;
-	else if (|mute_cnt)
-		mute_cnt <= mute_cnt - 1'b1;
-end
-
 reg  [31:0] sd_lba;
 reg         sd_rd = 0;
 reg         sd_wr = 0;
@@ -365,7 +382,7 @@ hps_io #(.STRLEN(($size(CONF_STR)>>3) + ($size(CONF_STR2)>>3) + 2)) hps_io
 	.paddle_3(pdl_usb[3]),
 
 	.status(status),
-	.status_menumask({status[17], ~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
+	.status_menumask({en216p, status[17], ~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
 	.info_req(diskside_info),
 	.info({1'b0,diskside} + 3'd1),
 
@@ -1172,6 +1189,7 @@ video video
 	.emphasis(emphasis),
 	.reticle(~status[22] ? reticle : 2'b00),
 	.pal_video(pal_video),
+	.VGA_DE(vga_de),
 	.ce_pix(ce_pix)
 );
 
