@@ -201,7 +201,7 @@ video_freak video_freak
 // 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXX XX XXXXXXXXXXXXXXXXXXXX XXXXXXXXX                     XX
+// XXXXXXXX XX XXXXXXXXXXXXXX XXXXX XXXXXXXXX                     XX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -562,7 +562,7 @@ reg [1:0] nes_ce;
 wire raw_serial = status[62];
 
 // Extend SNAC zapper high signal to be closer to original NES
-wire extend_serial_d4 = status[11];
+wire extend_serial_d4 = status[29];
 wire serial_d4 = extend_serial_d4 ? |serial_d4_sr : ~USER_IN[4];
 reg [7:0] serial_d4_sr;
 always @(posedge clk) begin
@@ -936,7 +936,7 @@ NES nes (
 	.emphasis        (emphasis),
 	.cycle           (cycle),
 	.scanline        (scanline),
-	.mask            (status[27:26]),
+	.mask            (status[28:27]),
 	// User Input
 	.joypad_out      (joypad_out),
 	.joypad_clock    (joypad_clock),
