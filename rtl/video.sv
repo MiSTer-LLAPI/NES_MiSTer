@@ -223,6 +223,8 @@ spram #(.addr_width(6), .data_width(24), .mem_name("pal"), .mem_init_file("rtl/t
 
 reg [23:0] pixel;
 
+reg hbl, vbl;
+
 always @(posedge clk) begin
 	
 	if(pix_ce_n) begin
@@ -245,8 +247,8 @@ always @(posedge clk) begin
 			default:pixel <= pal_smooth_lut[color_ef][23:0];
 		endcase
 	
-		HBlank <= hblank;
-		VBlank <= vblank;
+		hbl <= hblank;
+		vbl <= vblank;
 	end
 end
 
@@ -304,12 +306,12 @@ always @(posedge clk) begin
 			vblank <= (vc >= VBL_START);                                   // 240 lines
 		end
 		
-		if(hc == 278) begin
+		if(hc == 279) begin
 			HSync <= 1;
 			VSync <= ((vc >= vsync_start) && (vc < vsync_start+3));
 		end
 
-		if(hc == 303) HSync <= 0;
+		if(hc == 304) HSync <= 0;
 	end
 end
 
@@ -321,24 +323,62 @@ localparam VBL_END   = 511;
 wire is_padding = (hc > 255);
 
 reg dark_r, dark_g, dark_b;
-reg dark_r2, dark_g2, dark_b2;
-// bits are in order {B, G, R} for NTSC color emphasis
-// Only effects range $00-$0D, $10-$1D, $20-$2D, and $30-$3D
-always @(posedge clk) if (pix_ce_n) begin
-	{dark_r, dark_g, dark_b} <= 3'b000;
 
+wire [7:0] ri = pixel[23:16];
+wire [7:0] gi = pixel[15:8];
+wire [7:0] bi = pixel[7:0];
+
+reg [7:0] ro,go,bo;
+always @(posedge clk) if (pix_ce_n) begin
+	ro <= ri;
+	go <= gi;
+	bo <= bi;
 	if (~&color_ef[3:1]) begin // Only applies in draw range
-		dark_r <= emphasis[1] | emphasis[2];
-		dark_r2 <= emphasis[1] & emphasis[2];
-		dark_g <= emphasis[0] | emphasis[2];
-		dark_g2 <= emphasis[0] & emphasis[2];
-		dark_b <= emphasis[0] | emphasis[1];
-		dark_b2 <= emphasis[0] | emphasis[1];
+		case(emphasis)
+			1: begin
+					ro <= ri;
+					go <= gi - gi[7:2];
+					bo <= bi - bi[7:2];
+				end
+			2: begin
+					ro <= ri - ri[7:2];
+					go <= gi;
+					bo <= bi - bi[7:2];
+				end
+			3: begin
+					ro <= ri - ri[7:2];
+					go <= gi - gi[7:3];
+					bo <= bi - bi[7:2] - bi[7:3];
+				end
+			4: begin
+					ro <= ri - ri[7:3];
+					go <= gi - gi[7:3];
+					bo <= bi;
+				end
+			5: begin
+					ro <= ri - ri[7:3];
+					go <= gi - gi[7:2];
+					bo <= bi - bi[7:3];
+				end
+			6: begin
+					ro <= ri - ri[7:2];
+					go <= gi - gi[7:3];
+					bo <= bi - bi[7:3];
+				end
+			7: begin
+					ro <= ri - ri[7:2];
+					go <= gi - gi[7:2];
+					bo <= bi - bi[7:2];
+				end
+		endcase
 	end
+	
+	HBlank <= hbl;
+	VBlank <= vbl;
 end
 
-assign R = dark_r2 ? pixel[23:17] + pixel[23:18] : dark_r ? pixel[23:17] + pixel[23:18] + pixel[23:20] : pixel[23:16];
-assign G = dark_g2 ? pixel[15:9]  + pixel[15:10] : dark_g ? pixel[15:9]  + pixel[15:10] + pixel[15:12] : pixel[15:8];
-assign B = dark_b2 ? pixel[7:1]   + pixel[7:2]   : dark_b ? pixel[7:1]   + pixel[7:2]   + pixel[7:4]   : pixel[7:0];
+assign R = ro;
+assign G = go;
+assign B = bo;
 
 endmodule
