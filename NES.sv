@@ -864,8 +864,7 @@ wire nsf = (loader_flags[7:0] == 8'h1F);
 wire piano = (mapper_flags[30]);
 wire [3:0] prg_nvram = mapper_flags[34:31];
 wire loader_busy, loader_done, loader_fail;
-wire [20:0] prg_mask;
-wire [19:0] chr_mask;
+wire [9:0] prg_mask, chr_mask;
 
 GameLoader loader
 (
@@ -1506,8 +1505,8 @@ module GameLoader
 	output [7:0]  mem_data,
 	output        mem_write,
 	output [63:0] mapper_flags,
-	output [20:0] prg_mask,
-	output [19:0] chr_mask,
+	output reg [9:0]  prg_mask,
+	output reg [9:0]  chr_mask,
 	output reg    busy,
 	output reg    done,
 	output reg    error,
@@ -1539,25 +1538,28 @@ wire is_nes20_prg = (is_nes20 && (ines[9][3:0] == 4'hF));
 wire is_nes20_chr = (is_nes20 && (ines[9][7:4] == 4'hF));
 
 // NES 2.0 PRG & CHR sizes
-reg [21:0] prg_size2, chr_size2, prg_mask_a, chr_mask_a;
-reg [21:0] chr_ram_size;
+reg [21:0] prg_size2, chr_size2, chr_ram_size;
+
+function [9:0] mask;
+	input [10:0] size;
+	integer i;
+	begin
+		for (i=0;i<10;i=i+1) mask[i] = ( size > (11'd1 << i) );
+	end
+endfunction
 
 always @(posedge clk) begin
 	// PRG
 	// ines[4][1:0]: Multiplier, actual value is MM*2+1 (1,3,5,7)
 	// ines[4][7:2]: Exponent (2^E), 0-63
 	prg_size2 <= is_nes20_prg ? ({19'b0, ines[4][1:0], 1'b1} << ines[4][7:2]) : {prgrom, 14'b0};
-	prg_mask_a <= prg_size2 - 1'b1;
+	prg_mask <= mask(prg_size2[21:11]);
 
 	// CHR
 	chr_size2 <= is_nes20_chr ? ({19'b0, ines[5][1:0], 1'b1} << ines[5][7:2]) : {1'b0, chrrom, 13'b0};
 	chr_ram_size <= is_nes20 ? (22'd64 << chrram) : 22'h2000;
-
-	chr_mask_a <= |chr_size2 ? (chr_size2 - 1'b1) : (chr_ram_size - 1'b1);
+	chr_mask <= mask(|chr_size2 ? chr_size2[21:11] : chr_ram_size[21:11]);
 end
-
-assign prg_mask = prg_mask_a[20:0];
-assign chr_mask = chr_mask_a[19:0];
 
 wire [2:0] prg_size = prgrom <= 1  ? 3'd0 :		// 16KB
                       prgrom <= 2  ? 3'd1 : 		// 32KB
@@ -1691,6 +1693,11 @@ always @(posedge clk) begin
 				  bytes_left <= bytes_left - 1'd1;
 				  mem_addr <= mem_addr + 1'd1;
 				end
+			 end else if (mapper == 8'd232) begin
+				mem_addr <= 25'b0_0011_1000_0000_0111_1111_1110; // Quattro - Clear these two RAM address to restart game menu
+				bytes_left <= 21'h2;
+				state <= S_CLEARRAM;
+				clearclk <= 4'h0;
 			 end else begin
 				done <= 1;
 				busy <= 0;
@@ -1735,11 +1742,13 @@ always @(posedge clk) begin
 					bytes_left <= bytes_left - 1'd1;
 					mem_addr <= mem_addr + 1'd1;
 				end
-			 end else begin
+			 end else if (type_fds) begin
 				mem_addr <= 25'b0_0000_0000_0000_0000_0000_0000;
 				bytes_left <= 21'h2000;
 				state <= S_COPYBIOS;
 				clearclk <= 4'h0;
+			 end else begin
+				state <= S_DONE;
 			 end
 			end
 		S_COPYBIOS: begin // Read the next |bytes_left| bytes into |mem_addr|
