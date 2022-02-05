@@ -2,6 +2,7 @@
 // This program is GPL Licensed. See COPYING for the full license.
 //
 // MiSTer port: Copyright (C) 2017,2018 Sorgelig
+//LLAPI: llapi.sv needs to be in rtl folder and needs to be declared in file.qip (set_global_assignment -name SYSTEMVERILOG_FILE rtl/llapi.sv)
 
 module emu
 (
@@ -245,7 +246,10 @@ parameter CONF_STR = {
 	"P2-;",
 	"P2O9,Swap Joysticks,No,Yes;",
 	"P2OA,Multitap,Disabled,Enabled;",
+	//LLAPI: OSD menu item. swapped NONE with LLAPI. To detect LLAPI, status[63] = 1.
+	//LLAPI: Always double check witht the bits map allocation table to avoid conflicts	
 	"P2oUV,Serial Mode,None,SNAC,LLAPI;",
+	//LLAPI
 	"H4P2OT,SNAC Zapper,Off,On;",
 	"P2o02,Periphery,None,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2),Vaus,Vaus(A-Trigger),Powerpad,Family Trainer;",
 	"P2-;",
@@ -329,7 +333,9 @@ always_ff @(posedge clk) begin
 	if(old_downld && ~downloading & (type_fds|type_nsf|type_nes)) rom_sz <= ioctl_addr - 1'd1;
 end
 
+//LLAPI: OSD combinaison
 assign BUTTONS[0] = osd_btn || llapi_osd;
+//LLAPI
 
 // Pop OSD menu if no rom has been loaded automatically
 wire rom_loaded;
@@ -540,7 +546,8 @@ wire [7:0] nes_joy_A;
 wire [7:0] nes_joy_B;
 wire [7:0] nes_joy_C;
 wire [7:0] nes_joy_D;
-// if LLAPI is enabled, shift USB controllers over to the next available player slot
+
+//LLAPI: if LLAPI is enabled, shift USB controllers over to the next available player slot
 always_comb begin
 	if (use_llapi && use_llapi2) begin
 		nes_joy_A = joy_ll_a;
@@ -559,6 +566,7 @@ always_comb begin
 		nes_joy_D = usb_joy_D;
 	end
 end
+//LLAPI
 
 wire [3:0] famtr;
 assign famtr[0] = (~joypad_out[2] & powerpad[3]) | (~joypad_out[1] & powerpad[7]) | (~joypad_out[0] & powerpad[11]);
@@ -607,6 +615,7 @@ end
 // 4 = RX+
 // 5 = RX-
 
+//LLAPI : Connection to USER_OUT port
 wire llapi_latch_o, llapi_latch_o2, llapi_data_o, llapi_data_o2;
 
 reg [4:0] joypad1_data, joypad2_data;
@@ -632,11 +641,12 @@ always_comb begin
 	end else if (llapi_select) begin
 		USER_OUT[0] = llapi_latch_o;
 		USER_OUT[1] = llapi_data_o;
-		USER_OUT[2] = ~(llapi_select & ~OSD_STATUS);
+		USER_OUT[2] = ~(llapi_select & ~OSD_STATUS); //LED on Blister
 		USER_OUT[4] = llapi_latch_o2;
 		USER_OUT[5] = llapi_data_o2;
 	end
 end
+//LLAPI
 
 wire mic = (mic_cnt < 8'd215) && mic_button;
 reg [7:0] mic_cnt;
@@ -673,12 +683,16 @@ zapper zap (
 	.trigger(trigger)
 );
 
+//////////////////   LLAPI   ///////////////////
+
 wire [31:0] llapi_buttons, llapi_buttons2;
 wire [71:0] llapi_analog, llapi_analog2;
 wire [7:0]  llapi_type, llapi_type2;
 wire llapi_en, llapi_en2;
 
 wire llapi_select = status[63];
+
+//Port 1 conf
 
 LLAPI llapi
 (
@@ -695,6 +709,8 @@ LLAPI llapi
 	.LLAPI_EN(llapi_en),
 	.fast(use_llapi_gun)
 );
+
+//Port 2 conf
 
 LLAPI llapi2
 (
@@ -732,12 +748,16 @@ end
 wire use_llapi  = llapi_en  && llapi_select && ((|llapi_type  && ~(&llapi_type))  || llapi_button_pressed);
 wire use_llapi2 = llapi_en2 && llapi_select && ((|llapi_type2 && ~(&llapi_type2)) || llapi_button_pressed2);
 
+
+//Light gun mapping
 wire use_llapi_gun = use_llapi && llapi_type == 8'd28;
 wire use_llapi_gun2 = use_llapi2 && llapi_type2 == 8'd28;
 
+//Paddle mapping
 wire use_llapi_paddle = use_llapi && (llapi_type == 8'd41) || (llapi_type == 8'd42) ||  (llapi_type == 8'd30) || (llapi_type == 8'd7);
 wire use_llapi_paddle2 = use_llapi2 && (llapi_type2 == 8'd41) || (llapi_type2 == 8'd42) ||  (llapi_type2 == 8'd30) || (llapi_type2 == 8'd7);
 
+//Paddle Assignement : if LLAPI is enabled, shift USB controllers over to the next available player slot
 wire [7:0] pdl[4];
 always_comb begin
 	if (use_llapi_paddle && use_llapi_paddle2) begin
@@ -767,6 +787,11 @@ end
 // 4 = RX+   = P2 Latch
 // 5 = RX-   = P2 Data
 
+//Controller string provided by core for reference (order is important)
+//Controller specific mapping based on type. More info here : https://docs.google.com/document/d/12XpxrmKYx_jgfEPyw-O2zex1kTQZZ-NSBdLO2RQPRzM/edit
+//llapi_Buttons id are HID id - 1
+
+//Port 1 mapping
 wire [7:0] joy_ll_a;
 always_comb begin
         // if saturn controller, move select button to Z
@@ -783,6 +808,7 @@ always_comb begin
         end
 end
 
+//Port 2 mapping
 wire [7:0] joy_ll_b;
 always_comb begin
         // if saturn controller, move select button to Z
@@ -799,7 +825,12 @@ always_comb begin
         end
 end
 
+//Assign (DOWN + FIRST BUTTON) Combinaison to bring the OSD up - P1 and P1 ports.
+//TODO : Support long press detection
 wire llapi_osd = (llapi_buttons[26] && llapi_buttons[5] && llapi_buttons[0]) || (llapi_buttons2[26] && llapi_buttons2[5] && llapi_buttons2[0]);
+
+
+//LLAPI
 
 reg [7:0] paddle = 0;
 always @(posedge clk) begin
@@ -820,7 +851,10 @@ wire [7:0] paddle_adj = paddle_off + ((paddle < 40) ? 8'd40 : (paddle > 216) ? 8
 wire [7:0] paddle_nes = ~{paddle_adj[0],paddle_adj[1],paddle_adj[2],paddle_adj[3],paddle_adj[4],paddle_adj[5],paddle_adj[6],paddle_adj[7]};
 wire       paddle_en  = (status[34:33] == 2);
 wire       paddle_atr = paddle_en & status[32];
+
+//LLAPI
 wire       paddle_btn = (paddle_atr ? (joyA[4] | joyB[4] | joyC[4] | joyD[4]) : (joyA[10] | joyB[10] | joyC[10] | joyD[10])) | llapi_buttons[0] | llapi_buttons[24] | llapi_buttons2[0] | llapi_buttons2[24];
+//LLAPI
 
 always @(posedge clk) begin
 	if (reset_nes) begin
