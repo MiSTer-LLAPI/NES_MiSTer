@@ -2,6 +2,7 @@
 // This program is GPL Licensed. See COPYING for the full license.
 //
 // MiSTer port: Copyright (C) 2017,2018 Sorgelig
+
 //LLAPI: llapi.sv needs to be in rtl folder and needs to be declared in file.qip (set_global_assignment -name SYSTEMVERILOG_FILE rtl/llapi.sv)
 
 module emu
@@ -14,7 +15,8 @@ module emu
 	input         RESET,
 
 	//Must be passed to hps_io module
-	inout  [45:0] HPS_BUS,
+
+	inout  [48:0] HPS_BUS,
 
 	//Base video clock. Usually equals to CLK_SYS.
 	output        CLK_VIDEO,
@@ -40,6 +42,7 @@ module emu
 
 	input  [11:0] HDMI_WIDTH,
 	input  [11:0] HDMI_HEIGHT,
+
 	output        HDMI_FREEZE,
 
 `ifdef MISTER_FB
@@ -165,7 +168,7 @@ assign AUDIO_L   = sample[15:0];
 assign AUDIO_R   = AUDIO_L;
 assign AUDIO_MIX = 0;
 
-assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & status[17]);
+assign LED_USER  = downloading | (loader_fail & led_blink) | (bk_state != S_IDLE) | (bk_pending & ~status[50]);
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS [1] = 0;
@@ -201,7 +204,8 @@ video_freak video_freak
 // 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXX XX XXXXXXXXXXXXXX XXXXX XXXXXXXXXXXXXXX               XX
+
+// XXXXXXXX XX     X XXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -211,13 +215,13 @@ parameter CONF_STR = {
 	"-;",
 	"ONO,System Type,NTSC,PAL,Dendy;",
 	"OG,Disk Swap,Auto,FDS button;",
-	"OCF,Palette,Smooth,Unsat.,FCEUX,NES Classic,Composite,PC-10,PVM,Wavebeam,Real,Sony CXA,YUV,Greyscale,Rockman9,Ninten.,Custom;",
+	"oFH,Palette,Kitrinx,Smooth,Wavebeam,Sony CXA,PC-10 Better,Custom;",
 	"H3FC3,PAL,Custom Palette;",
 	"-;",
 	"C,Cheats;",
 	"H2OK,Cheats Enabled,On,Off;",
 	"-;",
-	"OH,Autosave,Off,On;",
+	"oI,Autosave,On,Off;",
 	"H5D0R6,Load Backup RAM;",
 	"H5D0R7,Save Backup RAM;",
 	"-;",
@@ -246,9 +250,9 @@ parameter CONF_STR = {
 	"P2-;",
 	"P2O9,Swap Joysticks,No,Yes;",
 	"P2OA,Multitap,Disabled,Enabled;",
-	//LLAPI: OSD menu item. swapped NONE with LLAPI. To detect LLAPI, status[63] = 1.
+	//LLAPI: OSD menu item. swapped NONE with LLAPI. To detect LLAPI, status[26] = 0.
 	//LLAPI: Always double check witht the bits map allocation table to avoid conflicts	
-	"P2oUV,Serial Mode,None,SNAC,LLAPI;",
+	"P2OQ,Serial Mode,LLAPI,SNAC;",
 	//LLAPI
 	"H4P2OT,SNAC Zapper,Off,On;",
 	"P2o02,Periphery,None,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2),Vaus,Vaus(A-Trigger),Powerpad,Family Trainer;",
@@ -291,7 +295,8 @@ wire [63:0] status;
 wire arm_reset = status[0];
 wire pal_video = |status[24:23];
 wire hide_overscan = status[4] && ~pal_video;
-wire [3:0] palette2_osd = status[15:12];
+
+wire [3:0] palette2_osd = status[49:47];
 wire joy_swap = status[9] ^ (raw_serial || piano); // Controller on port 2 for Miracle Piano/SNAC
 wire fds_swap_invert = status[16];
 wire ext_audio = ~status[30];
@@ -314,7 +319,7 @@ always_ff @(posedge clk) begin
 			2'b00: begin type_bios <= 1; is_bios <= 1; downloading <= ioctl_downloading; end
 			2'b01: begin type_nes <= 1; downloading <= ioctl_downloading; end
 			2'b10: begin type_fds <= 1; downloading <= ioctl_downloading; end
-			2'b11: begin type_palette <= 1; end
+			//2'b11: begin type_palette <= 1; end
 		endcase
 	else if(&filetype)
 		type_gg <= 1;
@@ -376,7 +381,9 @@ reg         ioctl_wait;
 
 wire [24:0] ps2_mouse;
 wire [15:0] joy_analog0, joy_analog1;
+//LLAPI
 wire  [7:0] pdl_usb[4];
+//LLAPI
 wire        forced_scandoubler;
 
 wire [21:0] gamma_bus;
@@ -395,6 +402,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.joystick_3(joyD),
 	.joystick_l_analog_0(joy_analog0),
 	.joystick_l_analog_1(joy_analog1),
+
 	.paddle_0(pdl_usb[0]),
 	.paddle_1(pdl_usb[1]),
 	.paddle_2(pdl_usb[2]),
@@ -402,6 +410,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.status(status),
 	.status_menumask({(rom_loaded && mapper_has_savestate), en216p, status[17], ~raw_serial, (palette2_osd != 4'd14), ~gg_avail, bios_loaded, ~bk_ena}),
+
 	.status_in({status[63:47],ss_slot,status[44:0]}),
 	.status_set(statusUpdate),
 	.info_req(info_req),
@@ -574,6 +583,7 @@ assign famtr[1] = (~joypad_out[2] & powerpad[2]) | (~joypad_out[1] & powerpad[6]
 assign famtr[2] = (~joypad_out[2] & powerpad[1]) | (~joypad_out[1] & powerpad[5]) | (~joypad_out[0] & powerpad[9] );
 assign famtr[3] = (~joypad_out[2] & powerpad[0]) | (~joypad_out[1] & powerpad[4]) | (~joypad_out[0] & powerpad[8] );
 
+
 wire mic_button = joyA[9] | joyB[9];
 wire fds_btn = joyA[8] | joyB[8];
 
@@ -588,7 +598,8 @@ wire fds_eject = swap_delay[2] | fds_swap_invert ? fds_btn : (clkcount[22] | fds
 
 reg [1:0] nes_ce;
 
-wire raw_serial = status[62];
+
+wire raw_serial = status[26];
 
 // Extend SNAC zapper high signal to be closer to original NES
 wire extend_serial_d4 = status[29];
@@ -618,9 +629,11 @@ end
 //LLAPI : Connection to USER_OUT port
 wire llapi_latch_o, llapi_latch_o2, llapi_data_o, llapi_data_o2;
 
+
 reg [4:0] joypad1_data, joypad2_data;
 
 always_comb begin
+
 	USER_OUT = 6'b111111;
 	joypad1_data = {2'b0, mic, paddle_en & paddle_btn, joypad_bits[0]};
 	joypad2_data = joypad_bits2[0];
@@ -683,6 +696,7 @@ zapper zap (
 	.trigger(trigger)
 );
 
+
 //////////////////   LLAPI   ///////////////////
 
 wire [31:0] llapi_buttons, llapi_buttons2;
@@ -690,7 +704,7 @@ wire [71:0] llapi_analog, llapi_analog2;
 wire [7:0]  llapi_type, llapi_type2;
 wire llapi_en, llapi_en2;
 
-wire llapi_select = status[63];
+wire llapi_select = ~status[26];
 
 //Port 1 conf
 
@@ -856,6 +870,7 @@ wire       paddle_atr = paddle_en & status[32];
 wire       paddle_btn = (paddle_atr ? (joyA[4] | joyB[4] | joyC[4] | joyD[4]) : (joyA[10] | joyB[10] | joyC[10] | joyD[10])) | llapi_buttons[0] | llapi_buttons[24] | llapi_buttons2[0] | llapi_buttons2[24];
 //LLAPI
 
+
 always @(posedge clk) begin
 	if (reset_nes) begin
 		joypad_bits <= 0;
@@ -898,6 +913,7 @@ wire nsf = (loader_flags[7:0] == 8'h1F);
 wire piano = (mapper_flags[30]);
 wire [3:0] prg_nvram = mapper_flags[34:31];
 wire loader_busy, loader_done, loader_fail;
+
 wire [9:0] prg_mask, chr_mask;
 
 GameLoader loader
@@ -1373,7 +1389,8 @@ always @(posedge clk) begin
 end
 
 wire bk_load    = status[6];
-wire bk_save    = status[7] | (bk_pending & OSD_STATUS && status[17]);
+
+wire bk_save    = status[7] | (bk_pending & OSD_STATUS && ~status[50]);
 reg  bk_loading = 0;
 reg  bk_loading_req = 0;
 reg  bk_request = 0;
@@ -1539,6 +1556,7 @@ module GameLoader
 	output [7:0]  mem_data,
 	output        mem_write,
 	output [63:0] mapper_flags,
+
 	output reg [9:0]  prg_mask,
 	output reg [9:0]  chr_mask,
 	output reg    busy,
@@ -1572,6 +1590,7 @@ wire is_nes20_prg = (is_nes20 && (ines[9][3:0] == 4'hF));
 wire is_nes20_chr = (is_nes20 && (ines[9][7:4] == 4'hF));
 
 // NES 2.0 PRG & CHR sizes
+
 reg [21:0] prg_size2, chr_size2, chr_ram_size;
 
 function [9:0] mask;
@@ -1587,11 +1606,13 @@ always @(posedge clk) begin
 	// ines[4][1:0]: Multiplier, actual value is MM*2+1 (1,3,5,7)
 	// ines[4][7:2]: Exponent (2^E), 0-63
 	prg_size2 <= is_nes20_prg ? ({19'b0, ines[4][1:0], 1'b1} << ines[4][7:2]) : {prgrom, 14'b0};
+
 	prg_mask <= mask(prg_size2[21:11]);
 
 	// CHR
 	chr_size2 <= is_nes20_chr ? ({19'b0, ines[5][1:0], 1'b1} << ines[5][7:2]) : {1'b0, chrrom, 13'b0};
 	chr_ram_size <= is_nes20 ? (22'd64 << chrram) : 22'h2000;
+
 	chr_mask <= mask(|chr_size2 ? chr_size2[21:11] : chr_ram_size[21:11]);
 end
 
@@ -1644,6 +1665,8 @@ assign mapper_flags[7:0]   = mapper;
 reg [3:0] clearclk; //Wait for SDRAM
 reg copybios;
 
+reg cleardone;
+
 typedef enum bit [3:0] { S_LOADHEADER, S_LOADPRG, S_LOADCHR, S_LOADEXTRA, S_LOADFDS, S_ERROR, S_CLEARRAM, S_COPYBIOS, S_LOADNSFH, S_LOADNSFD, S_COPYPLAY, S_DONE } mystate;
 mystate state;
 
@@ -1665,6 +1688,8 @@ always @(posedge clk) begin
 		            type_nsf ? 25'b0_0000_0000_0000_0001_0000_0000   // Address for NSF Header (0x80 bytes)
 									: 25'b0_0000_0000_0000_0000_0000_0000;  // Address for FDS : BIOS/PRG
 		copybios <= 0;
+
+		cleardone <= 0;
 	end else begin
 		case(state)
 		// Read 16 bytes of ines header
@@ -1727,11 +1752,13 @@ always @(posedge clk) begin
 				  bytes_left <= bytes_left - 1'd1;
 				  mem_addr <= mem_addr + 1'd1;
 				end
+
 			 end else if (mapper == 8'd232) begin
 				mem_addr <= 25'b0_0011_1000_0000_0111_1111_1110; // Quattro - Clear these two RAM address to restart game menu
 				bytes_left <= 21'h2;
 				state <= S_CLEARRAM;
 				clearclk <= 4'h0;
+				cleardone <= 1;
 			 end else begin
 				done <= 1;
 				busy <= 0;
@@ -1776,7 +1803,8 @@ always @(posedge clk) begin
 					bytes_left <= bytes_left - 1'd1;
 					mem_addr <= mem_addr + 1'd1;
 				end
-			 end else if (type_fds) begin
+
+			 end else if (!cleardone) begin
 				mem_addr <= 25'b0_0000_0000_0000_0000_0000_0000;
 				bytes_left <= 21'h2000;
 				state <= S_COPYBIOS;
