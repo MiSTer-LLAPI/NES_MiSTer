@@ -18,11 +18,11 @@ This is an FPGA implementation of the NES/Famicom based on [FPGANES](https://git
  * Supports large games such as Legend of Link and Rockman Minus Infinity
 
 ## Installation
-Copy the NES_\*.rbf file to the root of the SD card. Create a **NES** folder on the root of the card, and place NES roms (\*.NES) inside this folder. The ROMs must have an iNES or NES2.0 header, which most already do. NES2.0 headers are prefered for the best accuracy. To have a game ROM load automatically upon starting the core and place it in the **NES** folder.
-- boot0.rom = FDS BIOS file.  Will be used for any FDS images loaded
-- boot1.rom = NES Cart file.  Can be used with boot0.rom (BIOS) in place
-- boot2.rom = FDS image file.  Requires boot0.rom (BIOS).  Use a blank FDS (header only) to boot the FDS BIOS without a disk image.
-- boot3.rom = PAL file. It can be used to set your default custom palette. Save the menu option on "Custom" to apply immediately.
+Copy the NES_\*.rbf file to the directory or subdirectory of `/media/fat/`. Create a `games/NES/` directory on the root of the SD card (`/media/fat/games/NES/`), and place NES roms (\*.nes) inside this NES directory. The ROMs must have an iNES or NES2.0 header, which most already do. NES2.0 headers are preferred for the best accuracy. To have an NES or FDS game ROM load automatically upon starting the core, place it in the NES directory named as boot1.rom or boot2.rom, respectively.
+- `boot0.rom` = FDS BIOS file.  Will be used for any FDS images loaded
+- `boot1.rom` = NES Cart file.  Can be used with boot0.rom (BIOS) in place
+- `boot2.rom` = FDS image file.  Requires boot0.rom (BIOS).  Use a blank FDS (header only) to boot the FDS BIOS without a disk image.
+- `boot3.rom` = PAL file. It can be used to set your default custom palette. Save the menu option on "Custom" to apply immediately.
 
 ## Famicom Disk System Usage
 Before loading \*.FDS files, you must first load the official, unpatched FDS BIOS. The BIOS file should be renamed to boot0.rom and placed in the same folder as the ROMs (NES).  Alternatively, it can be loaded from the OSD if boot0.rom doesn't exist. After loading the core and the bios you may select an FDS image. By default, the NES core will swap disk sides for you automatically. To suppress this behavior, hold the FDS button on the player 1 controller. The "Disk Swap" OSD option manually controls the disk side.  Each button press increments the disk side.  Press and hold the fds button to eject and increment the disk side in this mode.  Some games only work correctly in manual disk swap mode, and require holding the FDS button for up to a few seconds (Gall Force,...).
@@ -61,20 +61,22 @@ The Miracle Piano is a MIDI keyboard compatible with the Miracle Piano Education
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 |**0**|**1**|**2**|**3**|**4**|**5**||**7**||**9**|**10**|**11**|~~12~~|13||15|
 |**16**||**18**|**19**|FDS|**21**|**22**|**23**|**24**|**25**|**26**|**27**|**28**||**30**|31|
-|**32**|33|**34**|**35**|**36**|37|**38**|**39**|~~40~~|41|42|~~43~~|**44**|~~45~~|**46**|**47**|
-|48|~~49~~|~~50~~|~~51~~|~~52~~|~~53~~|~~54~~|~~55~~|~~56~~|~~57~~|~~58~~|~~59~~|~~60~~|~~61~~|~~62~~|~~63~~|
+|**32**|**33**|**34**|**35**|**36**|**37**|**38**|**39**|~~40~~|41|42|~~43~~|**44**|~~45~~|**46**|**47**|
+|**48**|~~49~~|~~50~~|~~51~~|~~52~~|~~53~~|~~54~~|~~55~~|~~56~~|~~57~~|~~58~~|~~59~~|~~60~~|~~61~~|~~62~~|~~63~~|
 |**64**|**65**|**66**|**67**|**68**|**69**|**70**|**71**|**72**|**73**|**74**|**75**|**76**|**77**|**78**|**79**|
 |**80**|~~81~~|**82**|83|~~84~~|85|**86**|**87**|**88**|**89**|**90**|91|**92**|**93**|**94**|**95**|
 |~~96~~|**97**||~~99~~|~~100~~|**101**|||~~104~~|105||107|~~108~~|~~109~~|~~110~~|**111**|
 |**112**|**113**|~~114~~|~~115~~|~~116~~|~~117~~|**118**|**119**|~~120~~||~~122~~|~~123~~||~~125~~|~~126~~|~~127~~|
 |~~128~~|~~129~~|~~130~~|~~131~~|**132**|**133**|~~134~~|~~135~~|**136**|**137**|**138**|**139**|**140**|**141**|~~142~~|**143**|
-|~~144~~|145|**146**|**147**|**148**|149|**150**|~~151~~|**152**|153|**154**|155|~~156~~|~~157~~|**158**|**159**|
+|~~144~~|**145**|**146**|**147**|**148**|**149**|**150**|~~151~~|**152**|**153**|**154**|**155**|~~156~~|~~157~~|**158**|**159**|
 |~~160~~|~~161~~|162|163|164|165|~~166~~|~~167~~|~~168~~|~~169~~||**171**|**172**|**173**|||
-|||||**180**|~~181~~|~~182~~|~~183~~|**184**|**185**|~~186~~|~~187~~|~~188~~|**189**|**190**|191|
-|192|~~193~~|194|195|196||~~198~~|~~199~~|~~200~~|~~201~~|~~202~~|~~203~~|~~204~~|~~205~~|**206**|**207**|
+|||||**180**|~~181~~|~~182~~|~~183~~|**184**|**185**|~~186~~|~~187~~|~~188~~|**189**|**190**|**191**|
+|**192**|~~193~~|**194**|**195**|**196**||~~198~~|~~199~~|~~200~~|~~201~~|~~202~~|~~203~~|~~204~~|~~205~~|**206**|**207**|
 |~~208~~|**209**|**210**|**211**|~~212~~|~~213~~|~~214~~|~~215~~|~~216~~|~~217~~|**218**||||~~222~~||
 |~~224~~|**225**|~~226~~|227|228|~~229~~|~~230~~|~~231~~|**232**|~~233~~|234|~~235~~|~~236~~|~~237~~|||
 |~~240~~|~~241~~|~~242~~|**243**|~~244~~|~~245~~|246||~~248~~|~~249~~|~~250~~|~~251~~|~~252~~||~~254~~|255|
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+|**268**|413|**547**|---|---|---|---|---|---|---|---|---|---|---|---|---|
 
 Key: **Supported+Save state**, Supported, ~~Not Supported~~. Mappers that are not existent or not useful are blank.
 
