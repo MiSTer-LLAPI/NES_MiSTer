@@ -17,13 +17,13 @@
 
 module cart_top (
 	input             clk,
-	input             ce,
-	input             ppu_ce,
+	input             ce,             // M2
+	input             cpu_ce,         // CPU Phi1 clock (several mappers use m2 inverted)
+	input             paused,         // This indicates the core is paused so anything using the master clock won't get messed up
 	input             reset,
-	input      [19:0] ppuflags,       // Misc flags from PPU for MMC5 cheating
-	input      [31:0] flags,          // Misc flags from ines header {prg_size(3), chr_size(3), mapper(8)}
+	input      [63:0] flags,          // Misc flags from ines header {prg_size(3), chr_size(3), mapper(8)}
 	input      [15:0] prg_ain,        // Better known as "CPU Address in"
-	output reg [21:0] prg_aout,       // PRG Input / Output Address Lines
+	output reg [24:0] prg_aout,       // PRG Input / Output Address Lines ([25:22] extended Lines [Misc ROM])
 	input             prg_read,       // PRG Read / write signals
 	input             prg_write,
 	input       [7:0] prg_din,        // CPU Data In
@@ -32,8 +32,9 @@ module cart_top (
 	output reg        prg_allow,      // PRG Allow write access
 	output reg        prg_bus_write,  // PRG Data Driven
 	output reg        prg_conflict,   // PRG Data is ROM & prg_din
-	input      [20:0] prg_mask,       // PRG Mask for SDRAM translation
-	input      [19:0] chr_mask,       // CHR Mask for SDRAM translation
+	output reg        has_savestate,  // mapper supports savestates
+	input       [9:0] prg_mask,       // PRG Mask for SDRAM translation
+	input       [9:0] chr_mask,       // CHR Mask for SDRAM translation
 	input             chr_ex,         // chr_addr is from an extra sprite read if high
 	input             chr_read,       // Read from CHR
 	input             chr_write,      // Write to CHR
@@ -54,10 +55,25 @@ module cart_top (
 	output reg        irq,
 	input      [15:0] audio_in,
 	output reg [15:0] audio,          // External Audio
-	output reg  [1:0] diskside_auto,
-	input       [1:0] diskside,
+	output reg  [1:0] diskside,
 	input             fds_busy,       // FDS Disk Swap Busy
-	input             fds_eject       // FDS Disk Swap Pause
+	input             fds_eject,      // FDS Disk Swap Pause
+	input             fds_auto_eject,
+	input       [1:0] max_diskside,
+	// savestates              
+	input       [63:0]  SaveStateBus_Din,
+	input       [ 9:0]  SaveStateBus_Adr,
+	input               SaveStateBus_wren,
+	input               SaveStateBus_rst,
+	input               SaveStateBus_load,
+	output      [63:0]  SaveStateBus_Dout,
+	
+	input         Savestate_MAPRAMactive,     
+	input  [12:0] Savestate_MAPRAMAddr,     
+	input         Savestate_MAPRAMRdEn,    
+	input         Savestate_MAPRAMWrEn,    
+	input  [7:0]  Savestate_MAPRAMWriteData,
+	output [7:0]  Savestate_MAPRAMReadData
 );
 
 tri0 prg_allow_b, vram_a10_b, vram_ce_b, chr_allow_b, irq_b;
@@ -66,6 +82,7 @@ tri0 [15:0] flags_out_b, audio_out_b;
 tri1 [7:0] prg_dout_b, chr_dout_b;
 
 wire [13:0] chr_ain = chr_ex ? chr_ain_ex : chr_ain_orig;
+wire [2:0] prg_aoute_m413;
 
 // This mapper used to be default if no other mapper was found
 // It seems MMC0 is handled by map28. Does it have any purpose?
@@ -93,6 +110,8 @@ MMC0 mmc0(
 	.flags_out_b(mmc0_flags),
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b)
+	// savestates              
+	// savestates support - but no state in mapper needs saving
 );
 
 //*****************************************************************************//
@@ -123,7 +142,14 @@ MMC1 mmc1(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[0])
 );
 
 //*****************************************************************************//
@@ -156,7 +182,14 @@ Mapper28 map28(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[1])
 );
 
 //*****************************************************************************//
@@ -187,7 +220,14 @@ Mapper30 map30(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[26])
 );
 
 //*****************************************************************************//
@@ -218,7 +258,14 @@ Mapper32 map32(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[28])
 );
 
 //*****************************************************************************//
@@ -230,7 +277,7 @@ Mapper32 map32(
 //*****************************************************************************//
 MMC2 mmc2(
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU_CE
+	.ce         (ce),
 	.enable     (me[9]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -251,24 +298,32 @@ MMC2 mmc2(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.chr_ain_o  (chr_ain_orig)
+	.chr_ain_o  (chr_ain_orig),
+	.paused     (paused),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[6])
 );
 
 //*****************************************************************************//
 // Name   : MMC3                                                               //
-// Mappers: 4, 33, 37, 47, 48, 74, 76, 80, 82, 88, 95, 112, 118, 119, 154, 191,//
-//          192, 194, 195, 206, 207                                            //
+// Mappers: 4, 33, 37, 47, 48, 74, 76, 80, 82, 88, 95, 112, 118, 119, 154, 189,//
+//          191, 192, 194, 195, 196, 206, 207, 268                             //
 // Status : Working -- Blaarg IRQ timing test fails, but may be submapper      //
 // Notes  : While currently working well, this mapper could use a full review. //
 // Games  : Crystalis, Battletoads                                             //
 //*****************************************************************************//
 wire mmc3_en = me[118] | me[119] | me[47] | me[206] | me[112] | me[88] | me[154] | me[95]
 	| me[76] | me[80] | me[82] | me[207] | me[48] | me[33] | me[37] | me[74] | me[191]
-	| me[192] | me[194] | me[195] | me[4];
+	| me[192] | me[194] | me[195] | me[196] | me[4] | me[189] | me[268];
 
 MMC3 mmc3 (
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU CE
+	.ce         (ce),
 	.enable     (mmc3_en),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -289,7 +344,16 @@ MMC3 mmc3 (
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.chr_ain_o  (chr_ain_orig)
+	.chr_ain_o  (chr_ain_orig),
+	.m2_inv     (cpu_ce),
+	.paused     (paused),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[2])
 );
 
 //*****************************************************************************//
@@ -301,7 +365,7 @@ MMC3 mmc3 (
 //*****************************************************************************//
 MMC4 mmc4(
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU_CE
+	.ce         (ce),
 	.enable     (me[10]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -322,7 +386,15 @@ MMC4 mmc4(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.chr_ain_o  (chr_ain_orig)
+	.chr_ain_o  (chr_ain_orig),
+	.paused     (paused),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[7])
 );
 
 //*****************************************************************************//
@@ -356,11 +428,26 @@ MMC5 mmc5(
 	.audio_b    (audio_out_b),
 	// Special ports
 	.audio_dout	(mmc5_data),
+	.chr_ain_o  (chr_ain_orig),
+	.chr_ex     (chr_ex),
 	.chr_din    (chr_din),
 	.chr_write  (chr_write),
 	.chr_dout_b (chr_dout_b),
-	.ppu_ce     (ppu_ce),
-	.ppuflags   (ppuflags)
+	.paused     (paused),
+		// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[16]),
+	
+	.Savestate_MAPRAMactive   (Savestate_MAPRAMactive),
+	.Savestate_MAPRAMAddr     (Savestate_MAPRAMAddr[9:0]),     
+	.Savestate_MAPRAMRdEn     (Savestate_MAPRAMRdEn),    
+	.Savestate_MAPRAMWrEn     (Savestate_MAPRAMWrEn),    
+	.Savestate_MAPRAMWriteData(Savestate_MAPRAMWriteData),
+	.Savestate_MAPRAMReadData (SaveStateRAM_wired_or[1])
 );
 
 //*****************************************************************************//
@@ -462,7 +549,14 @@ Mapper16 map16(
 	.mapper_data_in(mapper_data_in),
 	.mapper_data_out(map16_data_out),
 	.mapper_prg_write(map16_prg_write),
-	.mapper_ovr(map16_ovr)
+	.mapper_ovr(map16_ovr),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[5])
 );
 
 //*****************************************************************************//
@@ -493,7 +587,14 @@ Mapper18 map18(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[27])
 );
 
 //*****************************************************************************//
@@ -524,7 +625,14 @@ Mapper34 map34(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[31])
 );
 
 //*****************************************************************************//
@@ -617,7 +725,14 @@ Mapper65 map65(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[29])
 );
 
 //*****************************************************************************//
@@ -649,7 +764,14 @@ Mapper66 map66(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[3])
 );
 
 //*****************************************************************************//
@@ -680,7 +802,14 @@ Mapper67 map67(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[20])
 );
 
 //*****************************************************************************//
@@ -711,7 +840,14 @@ Mapper68 map68(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[21])
 );
 
 //*****************************************************************************//
@@ -742,7 +878,14 @@ Mapper69 map69(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (ss5b_audio),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[12])
 );
 
 //*****************************************************************************//
@@ -773,7 +916,14 @@ Mapper71 map71(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[8])
 );
 
 //*****************************************************************************//
@@ -804,7 +954,14 @@ Mapper72 map72(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[30])
 );
 
 //*****************************************************************************//
@@ -835,7 +992,14 @@ Mapper77 map77(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[32])
 );
 
 //*****************************************************************************//
@@ -866,7 +1030,14 @@ Mapper78 map78(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[33])
 );
 
 //*****************************************************************************//
@@ -898,7 +1069,14 @@ Mapper79 map79(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[4])
 );
 
 //*****************************************************************************//
@@ -960,7 +1138,14 @@ Mapper89 map89(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[34])
 );
 
 //*****************************************************************************//
@@ -1022,7 +1207,14 @@ Mapper111 map111(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[25])
 );
 
 //*****************************************************************************//
@@ -1034,7 +1226,7 @@ Mapper111 map111(
 //*****************************************************************************//
 Mapper165 map165(
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU_CE
+	.ce         (ce),
 	.enable     (me[165]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -1055,7 +1247,9 @@ Mapper165 map165(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.chr_ain_o  (chr_ain_orig)
+	.chr_ain_o  (chr_ain_orig),
+	.m2_inv     (cpu_ce),
+	.paused     (paused)
 );
 
 //*****************************************************************************//
@@ -1069,6 +1263,39 @@ Mapper218 map218(
 	.clk        (clk),
 	.ce         (ce),
 	.enable     (me[218]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b)
+	// savestates              
+	// savestates support - but no state in mapper needs saving
+);
+
+//*****************************************************************************//
+// Name   : Mapper 227                                                 //
+// Mappers: 227                                                                //
+// Status : Needs evaluation                                                   //
+// Notes  :                                                                    //
+// Games  : 1200-in-1, 600-in-1, Bio Hazard                                    //
+//*****************************************************************************//
+Mapper227 map227(
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[227]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
 	.prg_aout_b (prg_addr_b),
@@ -1154,6 +1381,37 @@ Mapper234 map234(
 );
 
 //*****************************************************************************//
+// Name   : Mapper 246                                                         //
+// Mappers: 246                                                                 //
+// Status : Needs evaluation                                                   //
+// Notes  :                                                                    //
+// Games  : Feng Shen Bang                                                     //
+//*****************************************************************************//
+Mapper246 map246(
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[246]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b)
+);
+
+//*****************************************************************************//
 // Name   : RAMBO1 (Tengen MMC3)                                               //
 // Mappers: 64, 158                                                            //
 // Status : Needs testing.  Irq might be slightly off.                         //
@@ -1183,7 +1441,14 @@ Rambo1 rambo1(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.chr_ain_o  (chr_ain_orig)
+	.chr_ain_o  (chr_ain_orig),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[24])
 );
 
 //*****************************************************************************//
@@ -1246,7 +1511,14 @@ VRC1 vrc1(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[18])
 );
 
 //*****************************************************************************//
@@ -1277,7 +1549,14 @@ VRC3 vrc3(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[19])
 );
 
 //*****************************************************************************//
@@ -1308,7 +1587,64 @@ VRC24 vrc24(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[9])
+);
+
+//*****************************************************************************//
+// Name   : Konami VRC5                                                        //
+// Mappers: 547                                                                //
+// Status : Needs Evaluation                                                   //
+// Notes  :                                                                    //
+// Games  : Konami Q-Ta (Space School and Space College (J))                   //
+//*****************************************************************************//
+VRC5 vrc5(
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[547]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b),
+	// Special ports
+	.chr_din    (chr_din),
+	.chr_write  (chr_write),
+	.chr_dout_b (chr_dout_b),
+	.paused     (paused),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[36]),
+	
+	.Savestate_MAPRAMactive   (Savestate_MAPRAMactive),
+	.Savestate_MAPRAMAddr     (Savestate_MAPRAMAddr[10:0]),     
+	.Savestate_MAPRAMRdEn     (Savestate_MAPRAMRdEn),    
+	.Savestate_MAPRAMWrEn     (Savestate_MAPRAMWrEn),    
+	.Savestate_MAPRAMWriteData(Savestate_MAPRAMWriteData),
+	.Savestate_MAPRAMReadData (SaveStateRAM_wired_or[2])
 );
 
 //*****************************************************************************//
@@ -1339,7 +1675,14 @@ VRC6 vrc6(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (vrc6_audio),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[10])
 );
 
 //*****************************************************************************//
@@ -1403,7 +1746,14 @@ N163 n163(
 	.audio_in   (n163_audio),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.audio_dout	(n163_data)
+	.audio_dout	(n163_data),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[14])
 );
 
 //*****************************************************************************//
@@ -1467,8 +1817,7 @@ Nanjing map163(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special Ports
-	.ppu_ce     (ppu_ce),
-	.ppuflags   (ppuflags)
+	.paused     (paused)
 );
 
 
@@ -1532,7 +1881,14 @@ Sachen8259 sachen(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[22])
 );
 
 //*****************************************************************************//
@@ -1564,7 +1920,14 @@ SachenJV001 sachenj(
 	.irq_b      (irq_b),
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
-	.audio_b    (audio_out_b)
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[23])
 );
 
 //*****************************************************************************//
@@ -1596,6 +1959,8 @@ SachenNROM sachenn(
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b)
+	// savestates              
+	// savestates support - but no state in mapper needs saving
 );
 
 //*****************************************************************************//
@@ -1629,7 +1994,48 @@ JYCompany jycompany(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.ppu_ce     (ppu_ce),
+	.paused     (paused),
+	.chr_ain_o  (chr_ain_orig),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[35])
+);
+
+//*****************************************************************************//
+// Name   : Mapper 91                                                          //
+// Mappers: 91                                                                 //
+// Status : Working (Needs testing)                                            //
+// Notes  :                                                                    //
+// Games  : Street Fighter 3, Mortal Kombat II, Dragon Ball Z 2,               //
+//          Mario & Sonic 2,  Mario Rider,                                     //
+//          1995 Super HIK 4-in-1 (JY-016), 1995 Super HiK 4-in-1 (JY-017)     //
+//*****************************************************************************//
+Mapper91 map91(
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[91]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b),
 	.chr_ain_o  (chr_ain_orig)
 );
 
@@ -1664,6 +2070,44 @@ Mapper225 map225(
 	.audio_b    (audio_out_b)
 );
 
+
+
+//*****************************************************************************//
+// Name   : Mapper 413                                                         //
+// Mappers: 413                                                                //
+// Status : Working                                                            //
+// Notes  :                                                                    //
+// Games  : Super Russian Roulette                                             //
+//*****************************************************************************//
+Mapper413 map413 (
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[413]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b),
+	// Special ports
+	.chr_ain_o  (chr_ain_orig),
+	.prg_aoute  (prg_aoute_m413),
+	.m2_inv     (cpu_ce),
+	.paused     (paused)
+);
+
 //*****************************************************************************//
 // Name   : FDS                                                                //
 // Mappers: 20                                                                 //
@@ -1671,7 +2115,7 @@ Mapper225 map225(
 // Notes  : Uses a special wire to signal disk changes. Req. modified BIOS.    //
 // Games  : Bio Miracle for audio, Various unlicensed games for compatibility. //
 //*****************************************************************************//
-tri0 [1:0] fds_diskside_auto;
+tri0 [1:0] fds_diskside;
 MapperFDS mapfds(
 	.clk        (clk),
 	.ce         (ce),
@@ -1695,11 +2139,13 @@ MapperFDS mapfds(
 	.audio_in   (fds_audio),
 	.audio_b    (audio_out_b),
 	// Special ports
+	.prg_dbus   (prg_from_ram),
 	.audio_dout	(fds_data),
-	.diskside_auto_b (fds_diskside_auto),
-	.diskside   (diskside),
+	.diskside_b (fds_diskside),
+	.max_diskside (max_diskside),
 	.fds_busy   (fds_busy),
-	.fds_eject  (fds_eject)
+	.fds_eject_btn (fds_eject),
+	.fds_auto_eject_en (fds_auto_eject)
 );
 
 //*****************************************************************************//
@@ -1725,6 +2171,7 @@ NSF nsfplayer(
 	.chr_ain    (chr_ain),
 	.chr_aout_b (chr_addr_b),
 	.chr_read   (chr_read),
+	.chr_dout_b (chr_dout_b), // Special port
 	.chr_allow_b(chr_allow_b),
 	.vram_a10_b (vram_a10_b),
 	.vram_ce_b  (vram_ce_b),
@@ -1751,7 +2198,14 @@ SS5b_mixed snd_5bm (
 	.addr_in(prg_ain),
 	.data_in(prg_din),
 	.audio_in(audio_in),
-	.audio_out(ss5b_audio)
+	.audio_out(ss5b_audio),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[13])
 );
 
 wire [15:0] n163_audio;
@@ -1766,7 +2220,21 @@ namco163_mixed snd_n163 (
 	.data_in(prg_din),
 	.data_out(n163_data),
 	.audio_in(audio_in),
-	.audio_out(n163_audio)
+	.audio_out(n163_audio),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[15]),
+	
+	.Savestate_MAPRAMactive   (Savestate_MAPRAMactive),
+	.Savestate_MAPRAMAddr     (Savestate_MAPRAMAddr[6:0]),     
+	.Savestate_MAPRAMRdEn     (Savestate_MAPRAMRdEn),    
+	.Savestate_MAPRAMWrEn     (Savestate_MAPRAMWrEn),    
+	.Savestate_MAPRAMWriteData(Savestate_MAPRAMWriteData),
+	.Savestate_MAPRAMReadData (SaveStateRAM_wired_or[0])
 );
 
 wire [15:0] mmc5_audio;
@@ -1781,7 +2249,14 @@ mmc5_mixed snd_mmc5 (
 	.data_in(prg_din),
 	.data_out(mmc5_data),
 	.audio_in(audio_in),
-	.audio_out(mmc5_audio)
+	.audio_out(mmc5_audio),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[17])
 );
 
 wire [15:0] fds_audio;
@@ -1820,35 +2295,45 @@ vrc6_mixed snd_vrc6 (
 	.addr_in(prg_ain),
 	.data_in(prg_din),
 	.audio_in(audio_in),
-	.audio_out(vrc6_audio)
+	.audio_out(vrc6_audio),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[11])
 );
 
 
-wire [255:0] me;
+wire [1023:0] me;
 
 always @* begin
-	me = 256'd0;
-	me[flags[7:0]] = 1'b1;
+	me = 1024'd0;
+	me[{flags[18:17],flags[7:0]}] = 1'b1;
 
 	// Mapper output to cart pins
-	{prg_aout,   prg_allow,   chr_aout,   vram_a10,   vram_ce,   chr_allow,   prg_dout,   chr_dout,   irq,   audio} =
-	{prg_addr_b, prg_allow_b, chr_addr_b, vram_a10_b, vram_ce_b, chr_allow_b, prg_dout_b, chr_dout_b, irq_b, audio_out_b};
+	{prg_aout[21:0], prg_allow,   chr_aout,   vram_a10,   vram_ce,   chr_allow,   prg_dout,   chr_dout,   irq,   audio} =
+	{prg_addr_b,     prg_allow_b, chr_addr_b, vram_a10_b, vram_ce_b, chr_allow_b, prg_dout_b, chr_dout_b, irq_b, audio_out_b};
 
 	// Currently only used for Mapper 16 EEPROM. Expand if needed.
 	{mapper_addr, mapper_data_out, mapper_prg_write, mapper_ovr} = (me[159] | me[16]) ?
 		{map16_mapper_addr, map16_data_out, map16_prg_write, map16_ovr} : 28'd0;
+		
+	// Currently only used for Mapper 413 Misc ROM. Expand if needed.
+	prg_aout[24:22] = me[413] ? prg_aoute_m413 : 3'd0;
 
-	{diskside_auto} = {fds_diskside_auto};
+	{diskside} = {fds_diskside};
 
 	// Behavior helper flags
-	{prg_conflict, prg_bus_write, has_chr_dout} = {flags_out_b[2], flags_out_b[1], flags_out_b[0]};
+	{has_savestate, prg_conflict, prg_bus_write, has_chr_dout} = {flags_out_b[3], flags_out_b[2], flags_out_b[1], flags_out_b[0]};
 
 	// Address translation for SDRAM
-	if (prg_aout[21] == 1'b0)
-		prg_aout[20:0] = (prg_aout[20:0] & prg_mask);
+	if ((prg_aout[21] == 1'b0) && (prg_aout[24] == 1'b0))
+		prg_aout[20:0] = {(prg_aout[20:11] & prg_mask[9:0]), prg_aout[10:0]};
 
 	if (chr_aout[21:20] == 2'b10)
-		chr_aout[19:0] = {chr_aout[19:0] & chr_mask};
+		chr_aout[19:0] = {(chr_aout[19:11] & chr_mask[8:0]), chr_aout[10:0]};
 
 
 	// Remap the CHR address into VRAM, if needed.
@@ -1856,5 +2341,22 @@ always @* begin
 	prg_aout = (prg_ain < 'h2000) ? {11'b11_1000_0000_0, prg_ain[10:0]} : prg_aout;
 	prg_allow = prg_allow || (prg_ain < 'h2000);
 end
+
+// savestates
+localparam SAVESTATE_MODULES    = 37;
+wire [63:0] SaveStateBus_wired_or[0:SAVESTATE_MODULES-1];
+
+assign SaveStateBus_Dout  = SaveStateBus_wired_or[ 0] | SaveStateBus_wired_or[ 1] | SaveStateBus_wired_or[ 2] | SaveStateBus_wired_or[ 3] | SaveStateBus_wired_or[ 4] | 
+									 SaveStateBus_wired_or[ 5] | SaveStateBus_wired_or[ 6] | SaveStateBus_wired_or[ 7] | SaveStateBus_wired_or[ 8] | SaveStateBus_wired_or[ 9] |
+									 SaveStateBus_wired_or[10] | SaveStateBus_wired_or[11] | SaveStateBus_wired_or[12] | SaveStateBus_wired_or[13] | SaveStateBus_wired_or[14] |
+									 SaveStateBus_wired_or[15] | SaveStateBus_wired_or[16] | SaveStateBus_wired_or[17] | SaveStateBus_wired_or[18] | SaveStateBus_wired_or[19] |
+									 SaveStateBus_wired_or[20] | SaveStateBus_wired_or[21] | SaveStateBus_wired_or[22] | SaveStateBus_wired_or[23] | SaveStateBus_wired_or[24] |
+									 SaveStateBus_wired_or[25] | SaveStateBus_wired_or[26] | SaveStateBus_wired_or[27] | SaveStateBus_wired_or[28] | SaveStateBus_wired_or[29] |
+									 SaveStateBus_wired_or[30] | SaveStateBus_wired_or[31] | SaveStateBus_wired_or[32] | SaveStateBus_wired_or[33] | SaveStateBus_wired_or[34] |
+									 SaveStateBus_wired_or[35] | SaveStateBus_wired_or[36];
+
+localparam SAVESTATERAM_MODULES    = 3;
+wire [7:0] SaveStateRAM_wired_or[0:SAVESTATE_MODULES-1];
+assign Savestate_MAPRAMReadData = SaveStateRAM_wired_or[0] | SaveStateRAM_wired_or[1] | SaveStateRAM_wired_or[2];
 
 endmodule

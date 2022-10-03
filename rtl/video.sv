@@ -9,8 +9,6 @@ module video
 	input  [5:0] color,
 	input  [8:0] count_h,
 	input  [8:0] count_v,
-	input        forced_scandoubler,
-	input  [2:0] scale,
 	input        hide_overscan,
 	input  [3:0] palette,
 	input  [2:0] emphasis,
@@ -18,20 +16,19 @@ module video
 	input        pal_video,
 
 	input        load_color,
-	input [14:0] load_color_data,
+	input [23:0] load_color_data,
 	input  [5:0] load_color_index,
 
-	inout [21:0] gamma_bus,
-
-	output       ce_pix,
 	output   reg hold_reset,
 
-	output       VGA_HS,
-	output       VGA_VS,
-	output       VGA_DE,
-	output [7:0] VGA_R,
-	output [7:0] VGA_G,
-	output [7:0] VGA_B
+	output       ce_pix,
+	output reg   HSync,
+	output reg   VSync,
+	output reg   HBlank,
+	output reg   VBlank,
+	output [7:0] R,
+	output [7:0] G,
+	output [7:0] B
 );
 
 reg pix_ce, pix_ce_n;
@@ -42,178 +39,71 @@ always @(negedge clk) begin
 	pix_ce_n <=  cnt[1] & ~cnt[0];
 end
 
+assign ce_pix = pix_ce;
+// Kitrinx 34 palette by Kitrinx
+wire [23:0] pal_kitrinx_lut[64] = '{
+	'h666666, 'h01247B, 'h1B1489, 'h39087C, 'h520257, 'h5C0725, 'h571300, 'h472300,
+	'h2D3300, 'h0E4000, 'h004500, 'h004124, 'h003456, 'h000000, 'h000000, 'h000000,
+	'hADADAD, 'h2759C9, 'h4845DB, 'h6F34CA, 'h922B9B, 'hA1305A, 'h9B4018, 'h885400,
+	'h686700, 'h3E7A00, 'h1B8213, 'h0D7C57, 'h136C99, 'h000000, 'h000000, 'h000000,
+	'hFFFFFF, 'h78ABFF, 'h9897FF, 'hC086FF, 'hE27DEF, 'hF281AF, 'hED916D, 'hDBA43B,
+	'hBDB825, 'h92CB33, 'h6DD463, 'h5ECEA8, 'h65BEEA, 'h525252, 'h000000, 'h000000,
+	'hFFFFFF, 'hCADBFF, 'hD8D2FF, 'hE7CCFF, 'hF4C9F9, 'hFACBDF, 'hF7D2C4, 'hEEDAAF,
+	'hE1E3A5, 'hD0EBAB, 'hC2EEBF, 'hBDEBDB, 'hC0E4F7, 'hB8B8B8, 'h000000, 'h000000
+};
+
 // Smooth palette from FirebrandX
-wire [15:0] pal_smooth_lut[64] = '{
-	'h35AD, 'h4040, 'h4403, 'h3C07, 'h280A, 'h0C0B, 'h0049, 'h0067,
-	'h00C4, 'h00E0, 'h0100, 'h10E0, 'h28A0, 'h0000, 'h0000, 'h0000,
-	'h5EF7, 'h6143, 'h70C9, 'h688E, 'h5472, 'h2CB3, 'h00D3, 'h012F,
-	'h018B, 'h01C4, 'h01E0, 'h21C0, 'h45A0, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7E8D, 'h7E71, 'h7E16, 'h7DDB, 'h5DDC, 'h363C, 'h167A,
-	'h06B6, 'h0B0F, 'h232A, 'h4328, 'h6308, 'h2529, 'h0000, 'h0000,
-	'h7FFF, 'h7FB9, 'h7F7B, 'h7F7D, 'h7F5F, 'h7B5F, 'h677F, 'h5B9F,
-	'h57DE, 'h57FB, 'h5FF9, 'h6BF8, 'h7BD8, 'h5F17, 'h0000, 'h0000
+wire [23:0] pal_smooth_lut[64] = '{
+	'h6A6D6A, 'h001380, 'h1E008A, 'h39007A, 'h550056, 'h5A0018, 'h4F1000, 'h3D1C00,
+	'h253200, 'h003D00, 'h004000, 'h003924, 'h002E55, 'h000000, 'h000000, 'h000000,
+	'hB9BCB9, 'h1850C7, 'h4B30E3, 'h7322D6, 'h951FA9, 'h9D285C, 'h983700, 'h7F4C00,
+	'h5E6400, 'h227700, 'h027E02, 'h007645, 'h006E8A, 'h000000, 'h000000, 'h000000,
+	'hFFFFFF, 'h68A6FF, 'h8C9CFF, 'hB586FF, 'hD975FD, 'hE377B9, 'hE58D68, 'hD49D29,
+	'hB3AF0C, 'h7BC211, 'h55CA47, 'h46CB81, 'h47C1C5, 'h4A4D4A, 'h000000, 'h000000,
+	'hFFFFFF, 'hCCEAFF, 'hDDDEFF, 'hECDAFF, 'hF8D7FE, 'hFCD6F5, 'hFDDBCF, 'hF9E7B5,
+	'hF1F0AA, 'hDAFAA9, 'hC9FFBC, 'hC3FBD7, 'hC4F6F6, 'hBEC1BE, 'h000000, 'h000000
 };
 
-// NTSC UnsaturatedV6 palette
-//see: http://www.firebrandx.com/nespalette.html
-wire [15:0] pal_unsat_lut[64] = '{
-	'h35ad, 'h4060, 'h4823, 'h4027, 'h302b, 'h140b, 'h004a, 'h0068,
-	'h00c6, 'h0121, 'h0120, 'h0d00, 'h2ce0, 'h0000, 'h0000, 'h0000,
-	'h5ad6, 'h6943, 'h74c9, 'h748e, 'h5873, 'h3074, 'h0cb4, 'h0130,
-	'h01ac, 'h0205, 'h0220, 'h2200, 'h49e0, 'h0000, 'h0000, 'h0000,
-	'h7fff, 'h7eac, 'h7e32, 'h7dd7, 'h7ddc, 'h65be, 'h361e, 'h167b,
-	'h02f7, 'h0350, 'h1f6b, 'h3f49, 'h6729, 'h294a, 'h0000, 'h0000,
-	'h7fff, 'h7f98, 'h7f5a, 'h7f3c, 'h7f3f, 'h7b3f, 'h635f, 'h577e,
-	'h4fbd, 'h4fda, 'h5bd7, 'h67d6, 'h77d6, 'h5ef7, 'h0000, 'h0000
+// PC-10 Better by Kitrinx
+wire [23:0] pal_pc10_lut[64] = '{
+	'h6D6D6D, 'h10247C, 'h0A06B3, 'h6950C2, 'h6A0F62, 'h831264, 'h872F0F, 'h774C11,
+	'h5E490F, 'h2C430A, 'h1E612A, 'h258011, 'h164244, 'h000000, 'h000000, 'h000000,
+	'hB6B6B6, 'h2767C0, 'h1F48DA, 'h7114DA, 'h8A17DC, 'hB71987, 'hB0150F, 'hB37219,
+	'h806C15, 'h3E8313, 'h258011, 'h34A46F, 'h2C8589, 'h000000, 'h000000, 'h000000,
+	'hFFFFFF, 'h87B2ED, 'h9795EB, 'hC07BEB, 'hBD1DE1, 'hD97EED, 'hD59620, 'hDFB624,
+	'hCFD326, 'h84CA20, 'h41E11D, 'h7FEED6, 'h4EE9EF, 'h000000, 'h000000, 'h000000,
+	'hFFFFFF, 'hC3D8F6, 'hD2BBF4, 'hECBEF6, 'hE29EF2, 'hE8BCBA, 'hF0DBA0, 'hF5F969,
+	'hF7FA87, 'hC3F364, 'hACF180, 'h7FEED6, 'hAAD5F4, 'h000000, 'h000000, 'h000000
 };
 
-// FCEUX palette
-wire [15:0] pal_fcelut[64] = '{
-	'h39ce, 'h4464, 'h5400, 'h4c08, 'h3811, 'h0815, 'h0014, 'h002f,
-	'h00a8, 'h0100, 'h0140, 'h08e0, 'h2ce3, 'h0000, 'h0000, 'h0000,
-	'h5ef7, 'h75c0, 'h74e4, 'h7810, 'h5c17, 'h2c1c, 'h00bb, 'h0539,
-	'h01d1, 'h0240, 'h02a0, 'h1e40, 'h4600, 'h0000, 'h0000, 'h0000,
-	'h7fff, 'h7ee7, 'h7e4b, 'h7e28, 'h7dfe, 'h59df, 'h31df, 'h1e7f,
-	'h1efe, 'h0b50, 'h2769, 'h4feb, 'h6fa0, 'h3def, 'h0000, 'h0000,
-	'h7fff, 'h7f95, 'h7f58, 'h7f3a, 'h7f1f, 'h6f1f, 'h5aff, 'h577f,
-	'h539f, 'h53fc, 'h5fd5, 'h67f6, 'h7bf3, 'h6318, 'h0000, 'h0000
-};
-
-// NES Classic by FirebrandX
-wire [15:0] pal_nes_classic_lut[64] = '{
-	'h318C, 'h4400, 'h4C23, 'h3C46, 'h304A, 'h080B, 'h002A, 'h0487,
-	'h04C4, 'h0501, 'h0902, 'h0CE0, 'h28A0, 'h0000, 'h0000, 'h0000,
-	'h56B5, 'h6121, 'h6C89, 'h644D, 'h5452, 'h2473, 'h00D2, 'h014E,
-	'h09AB, 'h09E2, 'h0602, 'h25C2, 'h4983, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7E6C, 'h7DF1, 'h7DB6, 'h79BB, 'h55DC, 'h2E1C, 'h1279,
-	'h02D5, 'h030E, 'h272B, 'h4706, 'h66E9, 'h2108, 'h0000, 'h0000,
-	'h7FFF, 'h7F57, 'h7F39, 'h7F1B, 'h7F1D, 'h731F, 'h633E, 'h533C,
-	'h4F7B, 'h4F99, 'h5F97, 'h67B6, 'h7796, 'h56B5, 'h0000, 'h0000
-};
-
-// Composite Direct by FirebrandX
-wire [15:0] pal_composite_direct_lut[64] = '{
-	'h318C, 'h3C40, 'h4403, 'h4006, 'h2C0A, 'h0C0B, 'h0009, 'h0067,
-	'h00C3, 'h00E0, 'h0100, 'h08E0, 'h28A0, 'h0000, 'h0000, 'h0000,
-	'h56B5, 'h6523, 'h70A8, 'h686D, 'h5472, 'h2C73, 'h00D3, 'h012F,
-	'h018B, 'h01E4, 'h0200, 'h1DE0, 'h45A0, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7EAC, 'h7E31, 'h7DD6, 'h7DBC, 'h61BD, 'h361E, 'h167B,
-	'h06D7, 'h0730, 'h1F4B, 'h3F49, 'h6709, 'h2529, 'h0000, 'h0000,
-	'h7FFF, 'h7F98, 'h7F7B, 'h7F5D, 'h7F3F, 'h7B3F, 'h675F, 'h5B7F,
-	'h53BD, 'h53DA, 'h5FF8, 'h6BD7, 'h7BD7, 'h5EF7, 'h0000, 'h0000
-};
-
-// PC-10 by FirebrandX
-wire [15:0] pal_pc10_lut[64] = '{
-	'h35AD, 'h4880, 'h6C00, 'h6D2D, 'h3412, 'h3416, 'h0096, 'h0132,
-	'h012D, 'h0124, 'h11A0, 'h0240, 'h2520, 'h0000, 'h0000, 'h0000,
-	'h5AD6, 'h6DA0, 'h7D20, 'h7C12, 'h7C16, 'h481F, 'h001F, 'h01BB,
-	'h01B2, 'h0244, 'h0240, 'h36C0, 'h4A40, 'h1084, 'h0000, 'h0000,
-	'h7FFF, 'h7ECD, 'h7E52, 'h7DBB, 'h7C1F, 'h7DBF, 'h025F, 'h02DF,
-	'h037B, 'h036D, 'h03E0, 'h6FE9, 'h7FE0, 'h2529, 'h0000, 'h0000,
-	'h7FFF, 'h7F76, 'h7EDB, 'h7EDF, 'h7E5F, 'h5ADF, 'h4B7F, 'h27FF,
-	'h37FF, 'h27F6, 'h37F2, 'h6FE9, 'h7F72, 'h4A52, 'h0000, 'h0000
-};
-
-// PVM by FirebrandX
-wire [15:0] pal_pvm_lut[64] = '{
-	'h31AD, 'h3840, 'h4003, 'h3806, 'h280A, 'h080B, 'h006A, 'h0087,
-	'h00C4, 'h00E0, 'h00E0, 'h0CE0, 'h24C0, 'h0000, 'h0000, 'h0000,
-	'h5AF7, 'h5D42, 'h6CA9, 'h6C6C, 'h4C73, 'h2093, 'h00F4, 'h0151,
-	'h01AC, 'h01E5, 'h0200, 'h21E0, 'h45E0, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7EAD, 'h7E52, 'h7E36, 'h7DFD, 'h61FE, 'h2E3E, 'h12BC,
-	'h033A, 'h0372, 'h1F8C, 'h3F88, 'h6F49, 'h2549, 'h0000, 'h0000,
-	'h7FFF, 'h7FBA, 'h7F9C, 'h7F7D, 'h7F5E, 'h777F, 'h5F7F, 'h4FBF,
-	'h47DE, 'h4BFA, 'h57F7, 'h67F5, 'h7BD9, 'h5F17, 'h0000, 'h0000
-};
-
-// Wavebeam by FirebrandX
-wire [15:0] pal_wavebeam_lut[64] = '{
-	'h35AD, 'h4460, 'h4C04, 'h4408, 'h300C, 'h0C0C, 'h002B, 'h0049,
-	'h00C5, 'h0100, 'h0520, 'h0D00, 'h2CC0, 'h0000, 'h0000, 'h0000,
-	'h5AD6, 'h6942, 'h74C8, 'h6C8E, 'h5C73, 'h3035, 'h00B5, 'h0131,
-	'h01AC, 'h0204, 'h0220, 'h2200, 'h49C0, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7ECC, 'h7E6F, 'h7DF8, 'h7DDD, 'h65DE, 'h363E, 'h169B,
-	'h06F7, 'h0751, 'h1F6B, 'h4369, 'h6B29, 'h294A, 'h0000, 'h0000,
-	'h7FFF, 'h7F77, 'h7F5A, 'h7F3C, 'h7F1D, 'h731F, 'h633F, 'h577E,
-	'h539D, 'h53BA, 'h5BD7, 'h67D6, 'h7BB6, 'h5EF7, 'h0000, 'h0000
-};
-
-// Real by Squire
-wire [15:0] pal_real_lut[64] = '{
-	'h35AD, 'h4480, 'h5400, 'h4808, 'h380E, 'h200F, 'h000E, 'h004C,
-	'h0088, 'h00C6, 'h0140, 'h2100, 'h3100, 'h0000, 'h0842, 'h0842,
-	'h5EF7, 'h6D64, 'h7CE7, 'h7890, 'h6018, 'h385A, 'h109A, 'h0915,
-	'h014F, 'h018B, 'h0220, 'h35C0, 'h4DC0, 'h1084, 'h0842, 'h0842,
-	'h7FFF, 'h7E89, 'h7E31, 'h7DB8, 'h7D5F, 'h5D9F, 'h3DFF, 'h1E5F,
-	'h02BB, 'h1334, 'h2769, 'h5325, 'h7703, 'h2D6B, 'h0842, 'h0842,
-	'h7FFF, 'h7F56, 'h7F18, 'h7EFD, 'h7EDF, 'h76FF, 'h631F, 'h575F,
-	'h4BBF, 'h53DE, 'h63F8, 'h7BD5, 'h7FB4, 'h6318, 'h1084, 'h0842
+// Wavebeam by NakedArthur
+wire [23:0] pal_wavebeam_lut[64] = '{
+	'h6B6B6B, 'h001B88, 'h21009A, 'h40008C, 'h600067, 'h64001E, 'h590800, 'h481600,
+	'h283600, 'h004500, 'h004908, 'h00421D, 'h003659, 'h000000, 'h000000, 'h000000,
+	'hB4B4B4, 'h1555D3, 'h4337EF, 'h7425DF, 'h9C19B9, 'hAC0F64, 'hAA2C00, 'h8A4B00,
+	'h666B00, 'h218300, 'h008A00, 'h008144, 'h007691, 'h000000, 'h000000, 'h000000,
+	'hFFFFFF, 'h63B2FF, 'h7C9CFF, 'hC07DFE, 'hE977FF, 'hF572CD, 'hF4886B, 'hDDA029,
+	'hBDBD0A, 'h89D20E, 'h5CDE3E, 'h4BD886, 'h4DCFD2, 'h525252, 'h000000, 'h000000,
+	'hFFFFFF, 'hBCDFFF, 'hD2D2FF, 'hE1C8FF, 'hEFC7FF, 'hFFC3E1, 'hFFCAC6, 'hF2DAAD,
+	'hEBE3A0, 'hD2EDA2, 'hBCF4B4, 'hB5F1CE, 'hB6ECF1, 'hBFBFBF, 'h000000, 'h000000
 };
 
 // Sony CXA by FirebrandX
-wire [15:0] pal_sonycxa_lut[64] = '{
-	'h2D6B, 'h4480, 'h4C40, 'h4005, 'h280B, 'h080F, 'h002F, 'h006B,
-	'h00A6, 'h00E1, 'h00E0, 'h10E0, 'h2CC0, 'h0000, 'h0000, 'h0000,
-	'h5294, 'h7540, 'h7CE2, 'h70AC, 'h4C75, 'h207A, 'h00BA, 'h0115,
-	'h016D, 'h01C5, 'h01E0, 'h29E0, 'h55A0, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7E83, 'h7E2B, 'h7DD6, 'h799F, 'h499F, 'h1DDF, 'h065F,
-	'h02D8, 'h0B2F, 'h2747, 'h5342, 'h7EE0, 'h2108, 'h0000, 'h0000,
-	'h7FFF, 'h7F74, 'h7F37, 'h7F1C, 'h7EFF, 'h6AFF, 'h571F, 'h475F,
-	'h437D, 'h4BB8, 'h5BB5, 'h6FB2, 'h7F92, 'h56B5, 'h0000, 'h0000
+wire [23:0] pal_sonycxa_lut[64] = '{
+	'h585858, 'h00238C, 'h00139B, 'h2D0585, 'h5D0052, 'h7A0017, 'h7A0800, 'h5F1800,
+	'h352A00, 'h093900, 'h003F00, 'h003C22, 'h00325D, 'h000000, 'h000000, 'h000000,
+	'hA1A1A1, 'h0053EE, 'h153CFE, 'h6028E4, 'hA91D98, 'hD41E41, 'hD22C00, 'hAA4400,
+	'h6C5E00, 'h2D7300, 'h007D06, 'h007852, 'h0069A9, 'h000000, 'h000000, 'h000000,
+	'hFFFFFF, 'h1FA5FE, 'h5E89FE, 'hB572FE, 'hFE65F6, 'hFE6790, 'hFE773C, 'hFE9308,
+	'hC4B200, 'h79CA10, 'h3AD54A, 'h11D1A4, 'h06BFFE, 'h424242, 'h000000, 'h000000,
+	'hFFFFFF, 'hA0D9FE, 'hBDCCFE, 'hE1C2FE, 'hFEBCFB, 'hFEBDD0, 'hFEC5A9, 'hFED18E,
+	'hE9DE86, 'hC7E992, 'hA8EEB0, 'h95ECD9, 'h91E4FE, 'hACACAC, 'h000000, 'h000000
 };
 
-// YUV from Nestopia
-wire [15:0] pal_yuv_lut[64] = '{
-	'h318C, 'h44A0, 'h5042, 'h5007, 'h3C0B, 'h200D, 'h000D, 'h006A,
-	'h00C6, 'h0121, 'h0140, 'h0520, 'h2500, 'h0000, 'h0000, 'h0000,
-	'h56B5, 'h6D62, 'h7D08, 'h7C8E, 'h6474, 'h3C76, 'h10D6, 'h0133,
-	'h01AD, 'h0207, 'h0241, 'h1A20, 'h45E0, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7ECC, 'h7E52, 'h7DD8, 'h7DBE, 'h65BF, 'h3A1F, 'h127D,
-	'h02F7, 'h0371, 'h1B8B, 'h4388, 'h6F29, 'h2529, 'h0000, 'h0000,
-	'h7FFF, 'h7F78, 'h7F5A, 'h7F3D, 'h7F1F, 'h771F, 'h633F, 'h537E,
-	'h4B9C, 'h4BB9, 'h57D7, 'h67D6, 'h7BB6, 'h5EF7, 'h0000, 'h0000
-};
 
-// Greyscale
-wire [15:0] pal_greyscale_lut[64] = '{
-	'h39CE, 'h1CE7, 'h18C6, 'h14A5, 'h1CE7, 'h18C6, 'h18C6, 'h0842,
-	'h0C63, 'h1CE7, 'h2108, 'h1CE7, 'h1CE7, 'h0000, 'h0421, 'h0421,
-	'h5AD6, 'h3DEF, 'h35AD, 'h318C, 'h39CE, 'h35AD, 'h35AD, 'h318C,
-	'h39CE, 'h3DEF, 'h4631, 'h4210, 'h3DEF, 'h18C6, 'h0421, 'h0421,
-	'h7BDE, 'h5EF7, 'h5294, 'h4A52, 'h5294, 'h4E73, 'h5294, 'h56B5,
-	'h5AD6, 'h5EF7, 'h6739, 'h6318, 'h6318, 'h318C, 'h0421, 'h0421,
-	'h7BDE, 'h77BD, 'h6F7B, 'h6739, 'h6739, 'h6739, 'h6739, 'h6B5A,
-	'h6F7B, 'h6F7B, 'h6F7B, 'h6F7B, 'h6F7B, 'h5EF7, 'h0421, 'h0421
-};
+wire [23:0] mem_data;
 
-// Rockman9 Palette
-wire [15:0] pal_rockman9_lut[64] = '{
-	'h39CE, 'h5400, 'h4464, 'h4C08, 'h3811, 'h0815, 'h0014, 'h002F,
-	'h00A8, 'h0100, 'h0140, 'h08E0, 'h2CE3, 'h0000, 'h0000, 'h0000,
-	'h5EF7, 'h75C0, 'h74E4, 'h7810, 'h5C17, 'h2C1C, 'h00BB, 'h0539,
-	'h01D1, 'h0240, 'h02A0, 'h1E40, 'h4600, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7EE7, 'h7E4B, 'h7E34, 'h7DFE, 'h59DF, 'h31DF, 'h1E7F,
-	'h1EFE, 'h0B50, 'h2769, 'h4FEB, 'h6FA0, 'h294A, 'h0000, 'h0000,
-	'h7FFF, 'h7F95, 'h7F58, 'h7F3A, 'h7F1F, 'h6F1F, 'h5AFF, 'h577F,
-	'h539F, 'h53FC, 'h5FD5, 'h67F6, 'h7BF3, 'h4E73, 'h0000, 'h0000
-};
-
-// Nintendulator NTSC
-wire [15:0] pal_nintendulator_lut[64] = '{
-	'h318C, 'h4CA0, 'h6022, 'h5C07, 'h440C, 'h200F, 'h000F, 'h006C,
-	'h00E6, 'h0121, 'h0160, 'h0140, 'h2900, 'h0000, 'h0000, 'h0000,
-	'h56B5, 'h7980, 'h7CE7, 'h7C6F, 'h7035, 'h4059, 'h08B9, 'h0134,
-	'h01CD, 'h0246, 'h0260, 'h1660, 'h4E00, 'h0000, 'h0000, 'h0000,
-	'h7FFF, 'h7ECA, 'h7E31, 'h7DB9, 'h7D7F, 'h699F, 'h31FF, 'h027F,
-	'h0318, 'h0390, 'h0BC9, 'h3FA6, 'h7746, 'h2529, 'h0000, 'h0000,
-	'h7FFF, 'h7F77, 'h7F5A, 'h7F1D, 'h7EFF, 'h76FF, 'h633F, 'h4F5F,
-	'h439C, 'h43D9, 'h53F6, 'h67F5, 'h7BB5, 'h5AD6, 'h0000, 'h0000
-};
-
-wire [14:0] mem_data;
-
-spram #(.addr_width(6), .data_width(15), .mem_name("pal"), .mem_init_file("rtl/tao.mif")) pal_ram
+spram #(.addr_width(6), .data_width(24), .mem_name("pal"), .mem_init_file("rtl/tao.mif")) pal_ram
 (
 	.clock(clk),
 	.address(load_color ? load_color_index : color_ef),
@@ -222,38 +112,30 @@ spram #(.addr_width(6), .data_width(15), .mem_name("pal"), .mem_init_file("rtl/t
 	.q(mem_data)
 );
 
-reg [14:0] pixel;
-reg HBlank_r, VBlank_r;
+reg [23:0] pixel;
+
+reg hbl, vbl;
 
 always @(posedge clk) begin
 	
 	if(pix_ce_n) begin
 		case (palette)
-			0: pixel <= pal_smooth_lut[color_ef][14:0];
-			1: pixel <= pal_unsat_lut[color_ef][14:0];
-			2: pixel <= pal_fcelut[color_ef][14:0];
-			3: pixel <= pal_nes_classic_lut[color_ef][14:0];
-			4: pixel <= pal_composite_direct_lut[color_ef][14:0];
-			5: pixel <= pal_pc10_lut[color_ef][14:0];
-			6: pixel <= pal_pvm_lut[color_ef][14:0];
-			7: pixel <= pal_wavebeam_lut[color_ef][14:0];
-			8: pixel <= pal_real_lut[color_ef][14:0];
-			9: pixel <= pal_sonycxa_lut[color_ef][14:0];
-			10: pixel <= pal_yuv_lut[color_ef][14:0];
-			11: pixel <= pal_greyscale_lut[color_ef][14:0];
-			12: pixel <= pal_rockman9_lut[color_ef][14:0];
-			13: pixel <= pal_nintendulator_lut[color_ef][14:0];
-			14: pixel <= mem_data;
-			default:pixel <= pal_smooth_lut[color_ef][14:0];
+			0: pixel <= pal_kitrinx_lut[color_ef][23:0];
+			1: pixel <= pal_smooth_lut[color_ef][23:0];
+			2: pixel <= pal_wavebeam_lut[color_ef][23:0];
+			3: pixel <= pal_sonycxa_lut[color_ef][23:0];
+			4: pixel <= pal_pc10_lut[color_ef][23:0];
+			5: pixel <= mem_data;
+			default:pixel <= pal_kitrinx_lut[color_ef][23:0];
 		endcase
 	
-		HBlank_r <= HBlank;
-		VBlank_r <= VBlank;
+		hbl <= hblank;
+		vbl <= vblank;
 	end
 end
 
 
-reg  HBlank, VBlank, HSync, VSync;
+reg  hblank, vblank;
 reg  [9:0] h, v;
 reg  [1:0] free_sync = 0;
 wire [9:0] hc = (&free_sync | reset) ? h : count_h;
@@ -299,19 +181,19 @@ always @(posedge clk) begin
 
 	if(pix_ce) begin
 		if(hide_overscan) begin
-			HBlank <= (hc >= HBL_START && hc <= HBL_END);                  // 280 - ((224/240) * 16) = 261.3
-			VBlank <= (vc > (VBL_START - 9)) || (vc < 8);                  // 240 - 16 = 224
+			hblank <= (hc >= HBL_START && hc <= HBL_END);                  // 280 - ((224/240) * 16) = 261.3
+			vblank <= (vc > (VBL_START - 9)) || (vc < 8);                  // 240 - 16 = 224
 		end else begin
-			HBlank <= (hc >= HBL_START) && (hc <= HBL_END);                // 280 pixels
-			VBlank <= (vc >= VBL_START);                                   // 240 lines
+			hblank <= (hc >= HBL_START) && (hc <= HBL_END);                // 280 pixels
+			vblank <= (vc >= VBL_START);                                   // 240 lines
 		end
 		
-		if(hc == 278) begin
+		if(hc == 279) begin
 			HSync <= 1;
 			VSync <= ((vc >= vsync_start) && (vc < vsync_start+3));
 		end
 
-		if(hc == 303) HSync <= 0;
+		if(hc == 304) HSync <= 0;
 	end
 end
 
@@ -323,44 +205,66 @@ localparam VBL_END   = 511;
 wire is_padding = (hc > 255);
 
 reg dark_r, dark_g, dark_b;
-// bits are in order {B, G, R} for NTSC color emphasis
-// Only effects range $00-$0D, $10-$1D, $20-$2D, and $30-$3D
-always @(posedge clk) if (pix_ce_n) begin
-	{dark_r, dark_g, dark_b} <= 3'b000;
 
-	if ((color_ef[3:0] < 4'hE) && |emphasis) begin
-		if (~&emphasis) begin
-			dark_r <= ~emphasis[0];
-			dark_g <= ~emphasis[1];
-			dark_b <= ~emphasis[2];
-		end else begin
-			{dark_r, dark_g, dark_b} <= 3'b111;
-		end
+wire [7:0] ri = pixel[23:16];
+wire [7:0] gi = pixel[15:8];
+wire [7:0] bi = pixel[7:0];
+
+reg [7:0] ro,go,bo;
+always @(posedge clk) if (pix_ce_n) begin
+	reg [2:0] emph;
+	ro <= ri;
+	go <= gi;
+	bo <= bi;
+	emph <= 0;
+	if (~&color_ef[3:1]) begin // Only applies in draw range
+		emph <= emphasis;
 	end
+	
+	case(emph)
+		1: begin
+				ro <= ri;
+				go <= gi - gi[7:2];
+				bo <= bi - bi[7:2];
+			end
+		2: begin
+				ro <= ri - ri[7:2];
+				go <= gi;
+				bo <= bi - bi[7:2];
+			end
+		3: begin
+				ro <= ri - ri[7:2];
+				go <= gi - gi[7:3];
+				bo <= bi - bi[7:2] - bi[7:3];
+			end
+		4: begin
+				ro <= ri - ri[7:3];
+				go <= gi - gi[7:3];
+				bo <= bi;
+			end
+		5: begin
+				ro <= ri - ri[7:3];
+				go <= gi - gi[7:2];
+				bo <= bi - bi[7:3];
+			end
+		6: begin
+				ro <= ri - ri[7:2];
+				go <= gi - gi[7:3];
+				bo <= bi - bi[7:3];
+			end
+		7: begin
+				ro <= ri - ri[7:2];
+				go <= gi - gi[7:2];
+				bo <= bi - bi[7:2];
+			end
+	endcase
+	
+	HBlank <= hbl;
+	VBlank <= vbl;
 end
 
-wire  [4:0] vga_r = dark_r ? pixel[4:1] + pixel[4:2] : pixel[4:0];
-wire  [4:0] vga_g = dark_g ? pixel[9:6] + pixel[9:7] : pixel[9:5];
-wire  [4:0] vga_b = dark_b ? pixel[14:11] + pixel[14:12] : pixel[14:10];
-
-video_mixer #(260, 0, 1) video_mixer
-(
-	.*,
-	.clk_vid(clk),
-	.ce_pix(pix_ce),
-	.ce_pix_out(ce_pix),
-	
-	.HBlank(HBlank_r),
-	.VBlank(VBlank_r),
-
-	.scanlines(0),
-	.hq2x(scale==1),
-	.scandoubler(scale || forced_scandoubler),
-	.mono(0),
-
-	.R({vga_r, vga_r[4:2]}),
-	.G({vga_g, vga_g[4:2]}),
-	.B({vga_b, vga_b[4:2]})
-);
+assign R = ro;
+assign G = go;
+assign B = bo;
 
 endmodule
