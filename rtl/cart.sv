@@ -17,10 +17,10 @@
 
 module cart_top (
 	input             clk,
-	input             ce,
-	input             ppu_ce,
+	input             ce,             // M2
+	input             cpu_ce,         // CPU Phi1 clock (several mappers use m2 inverted)
+	input             paused,         // This indicates the core is paused so anything using the master clock won't get messed up
 	input             reset,
-	input      [19:0] ppuflags,       // Misc flags from PPU for MMC5 cheating
 	input      [63:0] flags,          // Misc flags from ines header {prg_size(3), chr_size(3), mapper(8)}
 	input      [15:0] prg_ain,        // Better known as "CPU Address in"
 	output reg [24:0] prg_aout,       // PRG Input / Output Address Lines ([25:22] extended Lines [Misc ROM])
@@ -55,10 +55,11 @@ module cart_top (
 	output reg        irq,
 	input      [15:0] audio_in,
 	output reg [15:0] audio,          // External Audio
-	output reg  [1:0] diskside_auto,
-	input       [1:0] diskside,
+	output reg  [1:0] diskside,
 	input             fds_busy,       // FDS Disk Swap Busy
 	input             fds_eject,      // FDS Disk Swap Pause
+	input             fds_auto_eject,
+	input       [1:0] max_diskside,
 	// savestates              
 	input       [63:0]  SaveStateBus_Din,
 	input       [ 9:0]  SaveStateBus_Adr,
@@ -276,7 +277,7 @@ Mapper32 map32(
 //*****************************************************************************//
 MMC2 mmc2(
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU_CE
+	.ce         (ce),
 	.enable     (me[9]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -298,6 +299,7 @@ MMC2 mmc2(
 	.audio_b    (audio_out_b),
 	// Special ports
 	.chr_ain_o  (chr_ain_orig),
+	.paused     (paused),
 	// savestates
 	.SaveStateBus_Din  (SaveStateBus_Din ), 
 	.SaveStateBus_Adr  (SaveStateBus_Adr ),
@@ -321,7 +323,7 @@ wire mmc3_en = me[118] | me[119] | me[47] | me[206] | me[112] | me[88] | me[154]
 
 MMC3 mmc3 (
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU CE
+	.ce         (ce),
 	.enable     (mmc3_en),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -343,6 +345,8 @@ MMC3 mmc3 (
 	.audio_b    (audio_out_b),
 	// Special ports
 	.chr_ain_o  (chr_ain_orig),
+	.m2_inv     (cpu_ce),
+	.paused     (paused),
 	// savestates
 	.SaveStateBus_Din  (SaveStateBus_Din ), 
 	.SaveStateBus_Adr  (SaveStateBus_Adr ),
@@ -361,7 +365,7 @@ MMC3 mmc3 (
 //*****************************************************************************//
 MMC4 mmc4(
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU_CE
+	.ce         (ce),
 	.enable     (me[10]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -383,6 +387,7 @@ MMC4 mmc4(
 	.audio_b    (audio_out_b),
 	// Special ports
 	.chr_ain_o  (chr_ain_orig),
+	.paused     (paused),
 	// savestates
 	.SaveStateBus_Din  (SaveStateBus_Din ), 
 	.SaveStateBus_Adr  (SaveStateBus_Adr ),
@@ -424,10 +429,11 @@ MMC5 mmc5(
 	// Special ports
 	.audio_dout	(mmc5_data),
 	.chr_ain_o  (chr_ain_orig),
+	.chr_ex     (chr_ex),
 	.chr_din    (chr_din),
 	.chr_write  (chr_write),
 	.chr_dout_b (chr_dout_b),
-	.ppu_ce     (ppu_ce),
+	.paused     (paused),
 		// savestates
 	.SaveStateBus_Din  (SaveStateBus_Din ), 
 	.SaveStateBus_Adr  (SaveStateBus_Adr ),
@@ -1220,7 +1226,7 @@ Mapper111 map111(
 //*****************************************************************************//
 Mapper165 map165(
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU_CE
+	.ce         (ce),
 	.enable     (me[165]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -1241,7 +1247,9 @@ Mapper165 map165(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.chr_ain_o  (chr_ain_orig)
+	.chr_ain_o  (chr_ain_orig),
+	.m2_inv     (cpu_ce),
+	.paused     (paused)
 );
 
 //*****************************************************************************//
@@ -1622,7 +1630,7 @@ VRC5 vrc5(
 	.chr_din    (chr_din),
 	.chr_write  (chr_write),
 	.chr_dout_b (chr_dout_b),
-	.ppu_ce     (ppu_ce),
+	.paused     (paused),
 	// savestates
 	.SaveStateBus_Din  (SaveStateBus_Din ), 
 	.SaveStateBus_Adr  (SaveStateBus_Adr ),
@@ -1809,8 +1817,7 @@ Nanjing map163(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special Ports
-	.ppu_ce     (ppu_ce),
-	.ppuflags   (ppuflags)
+	.paused     (paused)
 );
 
 
@@ -1843,6 +1850,45 @@ Mapper164 map164(
 	.flags_out_b(flags_out_b),
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b)
+);
+
+//*****************************************************************************//
+// Name   : DIS23C01 DAOU ROM CONTROLLER, Korea                                //
+// Mappers: 156                                                                //
+// Status : Working                                                            //
+// Notes  :                                                                    //
+// Games  : Metal Force (K), Buzz and Waldog (K), General's Son (K),           //
+//          Koko Adventure (K)                                                 //
+//*****************************************************************************//
+Mapper156 daou(
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[156]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b),
+	// savestates
+	.SaveStateBus_Din  (SaveStateBus_Din ), 
+	.SaveStateBus_Adr  (SaveStateBus_Adr ),
+	.SaveStateBus_wren (SaveStateBus_wren),
+	.SaveStateBus_rst  (SaveStateBus_rst ),
+	.SaveStateBus_load (SaveStateBus_load ),
+	.SaveStateBus_Dout (SaveStateBus_wired_or[37])
 );
 
 //*****************************************************************************//
@@ -1987,7 +2033,7 @@ JYCompany jycompany(
 	.audio_in   (audio_in),
 	.audio_b    (audio_out_b),
 	// Special ports
-	.ppu_ce     (ppu_ce),
+	.paused     (paused),
 	.chr_ain_o  (chr_ain_orig),
 	// savestates
 	.SaveStateBus_Din  (SaveStateBus_Din ), 
@@ -2074,7 +2120,7 @@ Mapper225 map225(
 //*****************************************************************************//
 Mapper413 map413 (
 	.clk        (clk),
-	.ce         (ppu_ce), // PPU CE
+	.ce         (ce),
 	.enable     (me[413]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
@@ -2096,7 +2142,9 @@ Mapper413 map413 (
 	.audio_b    (audio_out_b),
 	// Special ports
 	.chr_ain_o  (chr_ain_orig),
-	.prg_aoute  (prg_aoute_m413)
+	.prg_aoute  (prg_aoute_m413),
+	.m2_inv     (cpu_ce),
+	.paused     (paused)
 );
 
 //*****************************************************************************//
@@ -2106,7 +2154,7 @@ Mapper413 map413 (
 // Notes  : Uses a special wire to signal disk changes. Req. modified BIOS.    //
 // Games  : Bio Miracle for audio, Various unlicensed games for compatibility. //
 //*****************************************************************************//
-tri0 [1:0] fds_diskside_auto;
+tri0 [1:0] fds_diskside;
 MapperFDS mapfds(
 	.clk        (clk),
 	.ce         (ce),
@@ -2130,11 +2178,13 @@ MapperFDS mapfds(
 	.audio_in   (fds_audio),
 	.audio_b    (audio_out_b),
 	// Special ports
+	.prg_dbus   (prg_from_ram),
 	.audio_dout	(fds_data),
-	.diskside_auto_b (fds_diskside_auto),
-	.diskside   (diskside),
+	.diskside_b (fds_diskside),
+	.max_diskside (max_diskside),
 	.fds_busy   (fds_busy),
-	.fds_eject  (fds_eject)
+	.fds_eject_btn (fds_eject),
+	.fds_auto_eject_en (fds_auto_eject)
 );
 
 //*****************************************************************************//
@@ -2312,7 +2362,7 @@ always @* begin
 	// Currently only used for Mapper 413 Misc ROM. Expand if needed.
 	prg_aout[24:22] = me[413] ? prg_aoute_m413 : 3'd0;
 
-	{diskside_auto} = {fds_diskside_auto};
+	{diskside} = {fds_diskside};
 
 	// Behavior helper flags
 	{has_savestate, prg_conflict, prg_bus_write, has_chr_dout} = {flags_out_b[3], flags_out_b[2], flags_out_b[1], flags_out_b[0]};
@@ -2332,7 +2382,7 @@ always @* begin
 end
 
 // savestates
-localparam SAVESTATE_MODULES    = 37;
+localparam SAVESTATE_MODULES    = 38;
 wire [63:0] SaveStateBus_wired_or[0:SAVESTATE_MODULES-1];
 
 assign SaveStateBus_Dout  = SaveStateBus_wired_or[ 0] | SaveStateBus_wired_or[ 1] | SaveStateBus_wired_or[ 2] | SaveStateBus_wired_or[ 3] | SaveStateBus_wired_or[ 4] | 
@@ -2342,7 +2392,7 @@ assign SaveStateBus_Dout  = SaveStateBus_wired_or[ 0] | SaveStateBus_wired_or[ 1
 									 SaveStateBus_wired_or[20] | SaveStateBus_wired_or[21] | SaveStateBus_wired_or[22] | SaveStateBus_wired_or[23] | SaveStateBus_wired_or[24] |
 									 SaveStateBus_wired_or[25] | SaveStateBus_wired_or[26] | SaveStateBus_wired_or[27] | SaveStateBus_wired_or[28] | SaveStateBus_wired_or[29] |
 									 SaveStateBus_wired_or[30] | SaveStateBus_wired_or[31] | SaveStateBus_wired_or[32] | SaveStateBus_wired_or[33] | SaveStateBus_wired_or[34] |
-									 SaveStateBus_wired_or[35] | SaveStateBus_wired_or[36];
+									 SaveStateBus_wired_or[35] | SaveStateBus_wired_or[36] | SaveStateBus_wired_or[37];
 
 localparam SAVESTATERAM_MODULES    = 3;
 wire [7:0] SaveStateRAM_wired_or[0:SAVESTATE_MODULES-1];
