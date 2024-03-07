@@ -15,7 +15,6 @@ module emu
 	input         RESET,
 
 	//Must be passed to hps_io module
-
 	inout  [48:0] HPS_BUS,
 
 	//Base video clock. Usually equals to CLK_SYS.
@@ -43,7 +42,6 @@ module emu
 
 	input  [11:0] HDMI_WIDTH,
 	input  [11:0] HDMI_HEIGHT,
-
 	output        HDMI_FREEZE,
 
 `ifdef MISTER_FB
@@ -211,17 +209,12 @@ always @(posedge clk) begin
         new_vmode <= ~new_vmode;
     end
 end
-
+						  
 // Status Bit Map:
 // 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-			
-
-													   
-	   
-// XXXXXXXX XX     X XXXXXXXX XXXXX XXXXXXXXXXXXXXXXXXXXXX
-					   
+// XXXXXXXX XX     X XXXXXXXX XXXXX XXXXXXXXXXXXXXXXXXXXXX         
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -231,6 +224,12 @@ parameter CONF_STR = {
 	"-;",
 	"ONO,System Type,NTSC,PAL,Dendy;",
 	"-;",
+	//LLAPI: OSD menu item
+	//LLAPI Always ON
+	"-,<< LLAPI enabled >>;",
+	"-,<< Use USER I/O port >>;",
+	"-;",
+	//END LLAPI																			  
 	"C,Cheats;",
 	"H2OK,Cheats Enabled,On,Off;",
 	"-;",
@@ -262,16 +261,9 @@ parameter CONF_STR = {
 	"P2,Input Options;",
 	"P2-;",
 	"P2O9,Swap Joysticks,No,Yes;",
-	"P2OA,Multitap,Disabled,Enabled;",
+	"P2OA,Multitap,Disabled,Enabled;",		
+	//LLAPI Disable SNAC
 	//"P2oJK,SNAC,Off,Controllers,Zapper,3D Glasses;",
-	//LLAPI: OSD menu item. swapped NONE with LLAPI. To detect LLAPI, status[26] = 0.
-	//LLAPI: Always double check witht the bits map allocation table to avoid conflicts	
-	"P2OQ,USER I/O,LLAPI,Off;",
-	//LLAPI
-							  
-	   
-												 
-					   
 	"P2o02,Periphery,None,Zapper(Mouse),Zapper(Joy1),Zapper(Joy2),Vaus,Vaus(A-Trigger),Powerpad,Family Trainer;",
 	"P2oL,Famicom Keyboard,No,Yes;",
 	"P2-;",
@@ -317,7 +309,6 @@ wire [63:0] status;
 wire arm_reset = status[0];
 wire pal_video = |status[24:23];
 wire hide_overscan = status[4] && ~pal_video;
-
 wire [3:0] palette2_osd = status[49:47];
 wire joy_swap = status[9] ^ (raw_serial || piano); // Controller on port 2 for Miracle Piano/SNAC
 wire fds_auto_eject = ~status[16];
@@ -363,7 +354,7 @@ end
 //LLAPI: OSD combinaison
 //assign BUTTONS[0] = osd_btn;
 assign BUTTONS[0] = osd_btn || llapi_osd;
-//LLAPI
+//END LLAPI
 
 // Pop OSD menu if no rom has been loaded automatically
 wire rom_loaded;
@@ -432,15 +423,14 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	//.paddle_1(pdl[1]),
 	//.paddle_2(pdl[2]),
 	//.paddle_3(pdl[3]),
-	//END KLLAPI
+			 
 	.paddle_0(pdl_usb[0]),
 	.paddle_1(pdl_usb[1]),
 	.paddle_2(pdl_usb[2]),
 	.paddle_3(pdl_usb[3]),
-
+	//END LLAPI
 	.status(status),
 	.status_menumask({(rom_loaded && mapper_has_savestate), en216p, ~status[50], ~raw_serial, (palette2_osd != 3'd5), ~gg_avail, bios_loaded, ~bk_ena}),
-
 	.status_in({status[63:47],ss_slot,status[44:0]}),
 	.status_set(statusUpdate),
 	.info_req(info_req),
@@ -581,32 +571,12 @@ wire [7:0] usb_joy_A = { joyA[0], joyA[1], joyA[2], joyA[3], joyA[7], joyA[6], j
 wire [7:0] usb_joy_B = { joyB[0], joyB[1], joyB[2], joyB[3], joyB[7], joyB[6], joyB[5], ~paddle_atr & joyB[4] };
 wire [7:0] usb_joy_C = { joyC[0], joyC[1], joyC[2], joyC[3], joyC[7], joyC[6], joyC[5], ~paddle_atr & joyC[4] };
 wire [7:0] usb_joy_D = { joyD[0], joyD[1], joyD[2], joyD[3], joyD[7], joyD[6], joyD[5], ~paddle_atr & joyD[4] };
+//END LLAPI
 
 wire [7:0] nes_joy_A;
 wire [7:0] nes_joy_B;
 wire [7:0] nes_joy_C;
 wire [7:0] nes_joy_D;
-
-//LLAPI: if LLAPI is enabled, shift USB controllers over to the next available player slot
-always_comb begin
-	if (use_llapi && use_llapi2) begin
-		nes_joy_A = joy_ll_a;
-		nes_joy_B = joy_ll_b;
-		nes_joy_C = usb_joy_A;
-		nes_joy_D = usb_joy_B;
-	end else if (use_llapi || use_llapi2) begin
-		nes_joy_A = use_llapi  ? joy_ll_a : usb_joy_A;
-		nes_joy_B = use_llapi2 ? joy_ll_b : usb_joy_A;
-		nes_joy_C = usb_joy_B;
-		nes_joy_D = usb_joy_C;
-	end else begin
-		nes_joy_A = usb_joy_A;
-		nes_joy_B = usb_joy_B;
-		nes_joy_C = usb_joy_C;
-		nes_joy_D = usb_joy_D;
-	end
-end
-//LLAPI
 
 wire [3:0] famtr;
 assign famtr[0] = (~joypad_out[2] & powerpad[3]) | (~joypad_out[1] & powerpad[7]) | (~joypad_out[0] & powerpad[11]);
@@ -656,33 +626,6 @@ always @(posedge clk) begin
 	end
 end
 
-			
-																					  
-
-				 
-
-
-							 
-
-															  
-								   
-																
-					   
-						   
-					   
-
-							  
-								   
-
-					   
-									
-										  
-					 
-	   
-   
-
-	   
-					   
 // Indexes:
 // IDXDIR   Function    USBPIN
 // 0  OUT   Strobe      D+
@@ -693,6 +636,7 @@ end
 // 5  IN    P1D0        RX-
 // 6  IN    P2D0        TX+
 
+//LLAPI
 //assign USER_OUT[4] = 1'b1;
 //assign USER_OUT[5] = 1'b1;
 //assign USER_OUT[6] = 1'b1;
@@ -727,71 +671,7 @@ end
 //		if (fkeyb)              joypad2_data[4:1] = key_out;
 //	end
 //end
-
-//LLAPI : Connection to USER_OUT port
-wire llapi_latch_o, llapi_latch_o2, llapi_data_o, llapi_data_o2;
-
-	   
-						  
-						  
-						  
-					   
-
-reg [4:0] joypad1_data, joypad2_data;
-
-													  
-													   
-
-always_comb begin
-
-	USER_OUT = 6'b111111;
-	joypad1_data = {2'b0, mic, paddle_en & paddle_btn, joypad_bits[0]};
-	joypad2_data = joypad_bits2[0];
-
-	// periphery on port 2
-	if (use_llapi_gun)        joypad2_data[4:3] = {llapi_buttons[0],~llapi_buttons[1]};
-	else if (use_llapi_gun2)        joypad2_data[4:3] = {llapi_buttons2[0],~llapi_buttons2[1]};
-	else if (lightgun_en)        joypad2_data[4:3] = {trigger,light};
-	if (paddle_en)          joypad2_data[4:1] = {joypad_d4[0], paddle_btn, 1'b0, joypad_d4[0]};
-	if (status[34:32] == 6) joypad2_data[4:3] = {joypad_d4[0], joypad_d3[0]};
-	if (status[34:32] == 7) joypad2_data[4:1] = ~famtr;
-
-	if (raw_serial) begin
-		USER_OUT[0]  = joypad_out[0];
-		USER_OUT[1]  = ~joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
-			
-		joypad1_data = {2'b0, mic, 1'b0, ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
-		joypad2_data = {serial_d4, ~USER_IN[2], 2'b00, ~joy_swap ? ~USER_IN[5] : joypad_bits2[0]};
-	end else if (llapi_select) begin
-		USER_OUT[0] = llapi_latch_o;
-		USER_OUT[1] = llapi_data_o;
-		USER_OUT[2] = ~(llapi_select & ~OSD_STATUS); //LED on Blister
-		USER_OUT[4] = llapi_latch_o2;
-		USER_OUT[5] = llapi_data_o2;
-	   
-														
-																 
-																	  
-																											 
-			   
-					  
-					  
-					  
-					  
-
-																	 
-								 
-
-						
-															  
-																							 
-																		   
-													 
-													  
-					   
-	end
-end
-//LLAPI
+//END LLAPI
 
 wire mic = (mic_cnt < 8'd215) && mic_button;
 reg [7:0] mic_cnt;
@@ -841,15 +721,45 @@ zapper zap (
 	.trigger(trigger)
 );
 
-
 //////////////////   LLAPI   ///////////////////
+//Connection to USER_OUT port
+wire llapi_latch_o, llapi_latch_o2, llapi_data_o, llapi_data_o2;
+
+reg [4:0] joypad1_data, joypad2_data;
+
+always_comb begin
+	USER_OUT = 6'b111111;
+	joypad1_data = {2'b0, mic, paddle_en & paddle_btn, joypad_bits[0]};
+	joypad2_data = joypad_bits2[0];
+
+	// periphery on port 2
+	if (use_llapi_gun)        joypad2_data[4:3] = {llapi_buttons[0],~llapi_buttons[1]};
+	else if (use_llapi_gun2)        joypad2_data[4:3] = {llapi_buttons2[0],~llapi_buttons2[1]};
+	else if (lightgun_en)        joypad2_data[4:3] = {trigger,light};
+	if (paddle_en)          joypad2_data[4:1] = {joypad_d4[0], paddle_btn, 1'b0, joypad_d4[0]};
+	if (status[34:32] == 6) joypad2_data[4:3] = {joypad_d4[0], joypad_d3[0]};
+	if (status[34:32] == 7) joypad2_data[4:1] = ~famtr;
+
+	if (raw_serial) begin
+		USER_OUT[0]  = joypad_out[0];
+		USER_OUT[1]  = ~joy_swap ? ~joypad_clock[1] : ~joypad_clock[0];
+		joypad1_data = {2'b0, mic, 1'b0, ~joy_swap ? joypad_bits[0] : ~USER_IN[5]};
+		joypad2_data = {serial_d4, ~USER_IN[2], 2'b00, ~joy_swap ? ~USER_IN[5] : joypad_bits2[0]};
+	end else if (llapi_select) begin
+		USER_OUT[0] = llapi_latch_o;
+		USER_OUT[1] = llapi_data_o;
+		USER_OUT[2] = ~(llapi_select & ~OSD_STATUS); //LED on Blister
+		USER_OUT[4] = llapi_latch_o2;
+		USER_OUT[5] = llapi_data_o2;
+	end
+end
 
 wire [31:0] llapi_buttons, llapi_buttons2;
 wire [71:0] llapi_analog, llapi_analog2;
 wire [7:0]  llapi_type, llapi_type2;
 wire llapi_en, llapi_en2;
 
-wire llapi_select = ~status[26];
+wire llapi_select = 1'b1;
 
 //Port 1 conf
 
@@ -984,14 +894,30 @@ always_comb begin
         end
 end
 
-//Assign (DOWN + FIRST BUTTON) Combinaison to bring the OSD up - P1 and P1 ports.
-//TODO : Support long press detection
+//Assign (DOWN + START + FIRST BUTTON) Combinaison to bring the OSD up - P1 and P2 ports.
 wire llapi_osd = (llapi_buttons[26] && llapi_buttons[5] && llapi_buttons[0]) || (llapi_buttons2[26] && llapi_buttons2[5] && llapi_buttons2[0]);
 
-
+//if LLAPI is enabled, shift USB controllers over to the next available player slot
+always_comb begin
+	if (use_llapi & use_llapi2) begin
+		nes_joy_A = joy_ll_a;
+		nes_joy_B = joy_ll_b;
+		nes_joy_C = usb_joy_A;
+		nes_joy_D = usb_joy_B;
+	end else if (use_llapi ^ use_llapi2) begin
+		nes_joy_A = use_llapi  ? joy_ll_a : usb_joy_A;
+		nes_joy_B = use_llapi2 ? joy_ll_b : usb_joy_A;
+		nes_joy_C = usb_joy_B;
+		nes_joy_D = usb_joy_C;
+	end else begin
+		nes_joy_A = usb_joy_A;
+		nes_joy_B = usb_joy_B;
+		nes_joy_C = usb_joy_C;
+		nes_joy_D = usb_joy_D;
+	end
+end
 //////////////////  END LLAPI   ///////////////////
 
-	   
 
 reg [7:0] paddle = 0;
 always @(posedge clk) begin
@@ -1016,8 +942,7 @@ wire       paddle_atr = paddle_en & status[32];
 //LLAPI
 //wire       paddle_btn = paddle_atr ? (joyA[4] | joyB[4] | joyC[4] | joyD[4]) : (joyA[10] | joyB[10] | joyC[10] | joyD[10]);
 wire       paddle_btn = (paddle_atr ? (joyA[4] | joyB[4] | joyC[4] | joyD[4]) : (joyA[10] | joyB[10] | joyC[10] | joyD[10])) | llapi_buttons[0] | llapi_buttons[24] | llapi_buttons2[0] | llapi_buttons2[24];
-//LLAPI
-
+//END LLAPI
 
 always @(posedge clk) begin
 	if (reset_nes) begin
@@ -1061,7 +986,6 @@ wire nsf = (loader_flags[7:0] == 8'h1F);
 wire piano = (mapper_flags[30]);
 wire [3:0] prg_nvram = mapper_flags[34:31];
 wire loader_busy, loader_done, loader_fail;
-
 wire [9:0] prg_mask, chr_mask;
 
 GameLoader loader
@@ -1534,7 +1458,6 @@ always @(posedge clk) begin
 end
 
 wire bk_load    = status[6];
-
 wire bk_save    = status[7] | (bk_pending & OSD_STATUS && ~status[50]);
 reg  bk_loading = 0;
 reg  bk_loading_req = 0;
@@ -1693,7 +1616,6 @@ module GameLoader
 	output [7:0]  mem_data,
 	output        mem_write,
 	output [63:0] mapper_flags,
-
 	output reg [9:0]  prg_mask,
 	output reg [9:0]  chr_mask,
 	output reg    busy,
@@ -1727,7 +1649,6 @@ wire is_nes20_prg = (is_nes20 && (ines[9][3:0] == 4'hF));
 wire is_nes20_chr = (is_nes20 && (ines[9][7:4] == 4'hF));
 
 // NES 2.0 PRG & CHR sizes
-
 reg [21:0] prg_size2, chr_size2, chr_ram_size;
 
 function [9:0] mask;
@@ -1743,13 +1664,11 @@ always @(posedge clk) begin
 	// ines[4][1:0]: Multiplier, actual value is MM*2+1 (1,3,5,7)
 	// ines[4][7:2]: Exponent (2^E), 0-63
 	prg_size2 <= is_nes20_prg ? ({19'b0, ines[4][1:0], 1'b1} << ines[4][7:2]) : {prgrom, 14'b0};
-
 	prg_mask <= mask(prg_size2[21:11]);
 
 	// CHR
 	chr_size2 <= is_nes20_chr ? ({19'b0, ines[5][1:0], 1'b1} << ines[5][7:2]) : {1'b0, chrrom, 13'b0};
 	chr_ram_size <= is_nes20 ? (22'd64 << chrram) : 22'h2000;
-
 	chr_mask <= mask(|chr_size2 ? chr_size2[21:11] : chr_ram_size[21:11]);
 end
 
@@ -1801,7 +1720,6 @@ assign mapper_flags[7:0]   = mapper;
 
 reg [3:0] clearclk; //Wait for SDRAM
 reg copybios;
-
 reg cleardone;
 
 typedef enum bit [3:0] { S_LOADHEADER, S_LOADPRG, S_LOADCHR, S_LOADEXTRA, S_LOADFDS, S_ERROR, S_CLEARRAM, S_COPYBIOS, S_LOADNSFH, S_LOADNSFD, S_COPYPLAY, S_DONE } mystate;
@@ -1825,7 +1743,6 @@ always @(posedge clk) begin
 			type_nsf ? 25'b0_0000_0000_0000_0001_0000_0000   // Address for NSF Header (0x80 bytes)
 			: 25'b0_0000_0000_0000_0000_0000_0000;           // Address for FDS : BIOS/PRG
 		copybios <= 0;
-
 		cleardone <= 0;
 	end else begin
 		case(state)
@@ -1889,12 +1806,7 @@ always @(posedge clk) begin
 					bytes_left <= bytes_left - 1'd1;
 					mem_addr <= mem_addr + 1'd1;
 				end
-			
-
-										
-	   
 			end else if (mapper == 8'd232) begin
-					   
 				mem_addr <= 25'b0_0011_1000_0000_0111_1111_1110; // Quattro - Clear these two RAM address to restart game menu
 				bytes_left <= 21'h2;
 				state <= S_CLEARRAM;
@@ -1944,12 +1856,7 @@ always @(posedge clk) begin
 					bytes_left <= bytes_left - 1'd1;
 					mem_addr <= mem_addr + 1'd1;
 				end
-			
-
-								  
-	   
 			end else if (!cleardone) begin
-					   
 				mem_addr <= 25'b0_0000_0000_0000_0000_0000_0000;
 				bytes_left <= 21'h2000;
 				state <= S_COPYBIOS;
