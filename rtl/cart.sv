@@ -58,8 +58,9 @@ module cart_top (
 	output reg  [1:0] diskside,
 	input             fds_busy,       // FDS Disk Swap Busy
 	input             fds_eject,      // FDS Disk Swap Pause
-	input             fds_auto_eject,
-	input       [1:0] max_diskside,
+	input             fds_auto_eject, // FDS Auto Swap Enabled
+	input       [1:0] max_diskside,   // FDS disk side count
+	input             fds_fast,       // FDS disk access speed
 	// savestates              
 	input       [63:0]  SaveStateBus_Din,
 	input       [ 9:0]  SaveStateBus_Adr,
@@ -312,14 +313,14 @@ MMC2 mmc2(
 //*****************************************************************************//
 // Name   : MMC3                                                               //
 // Mappers: 4, 33, 37, 47, 48, 74, 76, 80, 82, 88, 95, 112, 118, 119, 154, 189,//
-//          191, 192, 194, 195, 196, 206, 207, 268                             //
+//          191, 192, 194, 195, 196, 205, 206, 207, 208, 268                   //
 // Status : Working -- Blaarg IRQ timing test fails, but may be submapper      //
 // Notes  : While currently working well, this mapper could use a full review. //
 // Games  : Crystalis, Battletoads                                             //
 //*****************************************************************************//
 wire mmc3_en = me[118] | me[119] | me[47] | me[206] | me[112] | me[88] | me[154] | me[95]
 	| me[76] | me[80] | me[82] | me[207] | me[48] | me[33] | me[37] | me[74] | me[191]
-	| me[192] | me[194] | me[195] | me[196] | me[4] | me[189] | me[268];
+	| me[192] | me[194] | me[195] | me[196] | me[4] | me[189] | me[268] | me[205] | me[208];
 
 MMC3 mmc3 (
 	.clk        (clk),
@@ -2184,7 +2185,8 @@ MapperFDS mapfds(
 	.max_diskside (max_diskside),
 	.fds_busy   (fds_busy),
 	.fds_eject_btn (fds_eject),
-	.fds_auto_eject_en (fds_auto_eject)
+	.fds_auto_eject_en (fds_auto_eject),
+	.fds_fast   (fds_fast)
 );
 
 //*****************************************************************************//
