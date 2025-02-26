@@ -894,12 +894,21 @@ always_comb begin
                 nes_joy_B = joy_usb_0;
 				nes_joy_C = joy_usb_1;
 				nes_joy_D = joy_usb_2;
-            
-        end else begin
+        end else if (use_llapi & ~use_llapi2) begin
+               	nes_joy_A = joy_ll_a;
+                nes_joy_B = joy_usb_0;
+				nes_joy_C = joy_usb_1;
+				nes_joy_D = joy_usb_2;
+        end else if (use_llapi & use_llapi2) begin
                 nes_joy_A = joy_ll_a;
                 nes_joy_B = joy_ll_b;
 				nes_joy_C = joy_usb_0;
-				nes_joy_D = joy_usb_1;
+				nes_joy_D = joy_usb_1;			
+        end else begin
+                nes_joy_A = 0;
+                nes_joy_B = 0;
+				nes_joy_C = 0;
+				nes_joy_D = 0;
      
 		end
 end
