@@ -139,7 +139,7 @@ module Mapper30(
 	inout        irq_b,       // IRQ
 	input [15:0] audio_in,    // Inverted audio from APU
 	inout [15:0] audio_b,     // Mixed audio output
-	inout [15:0] flags_out_b, // flags {0, 0, 0, 0, has_savestate, prg_conflict, prg_bus_write, has_chr_dout}
+	inout [15:0] flags_out_b, // flags {0, 0, has_flashsaves, prg_conflict_d0, has_savestate, prg_conflict, prg_bus_write, has_chr_dout}
 	// savestates              
 	input       [63:0]  SaveStateBus_Din,
 	input       [ 9:0]  SaveStateBus_Adr,
@@ -165,8 +165,7 @@ wire prg_allow;
 wire chr_allow;
 reg vram_a10;
 wire vram_ce;
-reg [15:0] flags_out = {12'h0, 1'b1, 3'b0};
-
+wire [15:0] flags_out = {10'h0, battery, 1'b0, 1'b1, 3'b0}; // has_flashsaves when battery=1, has_savestate
 
 reg [4:0] prgbank;
 reg [1:0] chrbank;
@@ -174,19 +173,60 @@ reg nametable;
 wire four_screen = flags[16] && flags[14];
 wire battery = flags[25];
 
+reg [1:0] write_state;
+localparam [1:0] STATE_IDLE    = 2'b00,
+                 STATE_UNLOCK1 = 2'b01,
+                 STATE_UNLOCK2 = 2'b10,
+                 STATE_CMD     = 2'b11;
+
+wire [14:0] prg_addr_15bit = {
+	(prg_ain[15:14] == 2'b11) ? 1'b1 : prgbank[0],  // Bank bit [14] (LSB of bank)
+	prg_ain[13:0]                                   // Offset [13:0]
+};
+
+wire unlock1_match = (prg_addr_15bit == 15'h5555);  // Bank 1, offset $1555
+wire unlock2_match = (prg_addr_15bit == 15'h2AAA);  // Bank 0, offset $2AAA
+wire flash_write = (write_state == STATE_CMD) &&
+                   (prg_ain[15:14] == 2'b10) &&  // $8000-$BFFF only
+                   prg_write;
+
 always @(posedge clk) begin
 	if (~enable) begin
-		prgbank   <= 0;
-		chrbank   <= 0;
-		nametable <= 0;
+		prgbank		<= 0;
+		chrbank		<= 0;
+		nametable	<= 0;
+		write_state	<= STATE_IDLE;
 	end else if (SaveStateBus_load) begin
-		prgbank   <= SS_MAP1[ 4: 0];
-		chrbank   <= SS_MAP1[ 6: 5];
-		nametable <= SS_MAP1[    7];
+		prgbank		<= SS_MAP1[ 4: 0];
+		chrbank		<= SS_MAP1[ 6: 5];
+		nametable	<= SS_MAP1[    7];
+		write_state	<= SS_MAP1[ 9: 8];
 	end else if (ce) begin
-		// with battery bit set $C000-$FFFF else $8000-$FFFF
-		if (prg_ain[15] & (prg_ain[14] | ~battery) & prg_write) begin
-			{nametable, chrbank, prgbank}   <= prg_din[7:0];
+		if (prg_ain[15] && prg_write) begin
+			// Mapper register writes (battery=1: $C000-$FFFF, battery=0: $8000-$FFFF)
+			if (battery ? prg_ain[14] : 1'b1) begin
+				{nametable, chrbank, prgbank} <= prg_din[7:0];
+			end
+			// Flash sequence tracking (only for $8000-$BFFF when battery=1)
+			else if (battery && !prg_ain[14]) begin
+				case (write_state)
+					STATE_IDLE: begin
+						write_state <= (unlock1_match && prg_din == 8'hAA) ? STATE_UNLOCK1 : STATE_IDLE;
+					end
+
+					STATE_UNLOCK1: begin
+						write_state <= (unlock2_match && prg_din == 8'h55) ? STATE_UNLOCK2 : STATE_IDLE;
+					end
+
+					STATE_UNLOCK2: begin
+						write_state <= (unlock1_match && prg_din == 8'hA0) ? STATE_CMD : STATE_IDLE;
+					end
+
+					STATE_CMD: begin
+						write_state <= STATE_IDLE;
+					end
+				endcase
+			end
 		end
 	end
 end
@@ -194,7 +234,8 @@ end
 assign SS_MAP1_BACK[ 4: 0] = prgbank;
 assign SS_MAP1_BACK[ 6: 5] = chrbank;
 assign SS_MAP1_BACK[    7] = nametable;
-assign SS_MAP1_BACK[63: 8] = 56'b0; // free to be used
+assign SS_MAP1_BACK[ 9: 8] = write_state;
+assign SS_MAP1_BACK[63:10] = 54'b0; // free to be used
 
 always begin
 	// mirroring mode
@@ -207,7 +248,7 @@ always begin
 end
 
 assign prg_aout = {3'b000, (prg_ain[15:14] == 2'b11) ? 5'b11111 : prgbank, prg_ain[13:0]};
-assign prg_allow = prg_ain[15] && !prg_write;
+assign prg_allow = prg_ain[15] && (!prg_write || flash_write);
 assign chr_allow = flags[15];
 assign chr_aout = {flags[15] ? 7'b11_1111_1 : 7'b10_0000_0, (four_screen && chr_ain[13]) ? 2'b11 : chrbank, chr_ain[12:0]};
 assign vram_ce = chr_ain[13] && !four_screen;
@@ -231,6 +272,7 @@ endmodule
 // 101 - Jaleco JF-11,JF-14
 // 140 - Jaleco JF-11,JF-14
 // 66  - GxROM
+// 144 - Death Race
 // 145 - Sachen
 // 149 - Sachen
 module Mapper66(
@@ -280,7 +322,7 @@ wire prg_allow;
 wire chr_allow;
 wire vram_a10;
 wire vram_ce;
-wire [15:0] flags_out = {12'h0, 1'b1, prg_conflict, 2'b00};
+wire [15:0] flags_out = {11'h0, prg_conflict_d0, 1'b1, prg_conflict, 2'b00};
 
 
 reg [4:0] prg_bank;
@@ -293,6 +335,7 @@ wire Mapper101 = (mapper == 101);
 wire Mapper46 = (mapper == 46);
 wire Mapper86 = (mapper == 86);
 wire Mapper87 = (mapper == 87);
+wire Mapper144 = (mapper == 144);
 wire Mapper145 = (mapper == 145);
 wire Mapper149 = (mapper == 149);
 
@@ -343,7 +386,8 @@ assign chr_allow = flags[15];
 assign chr_aout = {2'b10, chr_bank, chr_ain[12:0]};
 assign vram_ce = chr_ain[13];
 assign vram_a10 = flags[14] ? chr_ain[10] : chr_ain[11];
-wire prg_conflict = prg_ain[15] && (Mapper149);
+wire prg_conflict = prg_ain[15] && (Mapper144 || Mapper149);
+wire prg_conflict_d0 = prg_ain[15] && (Mapper144);
 
 // savestate
 wire [63:0] SS_MAP1;
@@ -661,6 +705,7 @@ assign SaveStateBus_Dout = enable ? SaveStateBus_Dout_active : 64'h0000000000000
 
 endmodule
 
+// #81 NTDEC N715021
 // #78-IREM-HOLYDIVER/JALECO-JF-16
 // #70,#152-Bandai
 module Mapper78(
@@ -717,6 +762,7 @@ reg [3:0] chr_bank;
 reg mirroring;  // See vram_a10_t
 wire vmirror;
 wire mapper70 = (flags[7:0] == 70);
+wire mapper81 = (flags[7:0] == 81); // NTDEC N715021
 wire mapper152 = (flags[7:0] == 152);
 wire onescreen = (flags[22:21] == 1) | mapper152; // default (0 or 3) Holy Diver submapper; (1) JALECO-JF-16
 always @(posedge clk) begin
@@ -730,12 +776,12 @@ always @(posedge clk) begin
 		mirroring <= SS_MAP1[    8];
 	end else if (ce) begin
 		if (prg_ain[15] == 1'b1 && prg_write) begin
-			if (mapper70)
-				{prg_bank, chr_bank} <= prg_din;
-			else if (mapper152)
-				{mirroring, prg_bank[2:0], chr_bank} <= prg_din;
-			else
-				{chr_bank, mirroring, prg_bank[2:0]} <= prg_din;
+			case (flags[7:0])
+				70: {prg_bank, chr_bank} <= prg_din;
+				78: {chr_bank, mirroring, prg_bank[2:0]} <= prg_din;
+				81: {prg_bank[1:0], chr_bank[1:0]} <= prg_din[3:0];
+				152: {mirroring, prg_bank[2:0], chr_bank} <= prg_din;
+			endcase
 		end
 	end
 end
@@ -751,7 +797,7 @@ assign chr_allow = flags[15];
 assign chr_aout = {5'b10_000, chr_bank, chr_ain[12:0]};
 assign vram_ce = chr_ain[13];
 
-assign vmirror = mapper70 ? flags[14] : mirroring;
+assign vmirror = (mapper70 || mapper81) ? flags[14] : mirroring;
 
 // The a10 VRAM address line. (Used for mirroring)
 reg vram_a10_t;

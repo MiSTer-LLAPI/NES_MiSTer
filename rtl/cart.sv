@@ -33,6 +33,8 @@ module cart_top (
 	output reg        prg_bus_write,  // PRG Data Driven
 	output reg        prg_conflict,   // PRG Data is ROM & prg_din
 	output reg        has_savestate,  // mapper supports savestates
+	output reg        prg_conflict_d0,   // PRG Data is ROM & (prg_din | 1)
+	output reg        has_flashsaves, // Homebrew mapper that saves to PRG-ROM in flash memory
 	input       [9:0] prg_mask,       // PRG Mask for SDRAM translation
 	input       [9:0] chr_mask,       // CHR Mask for SDRAM translation
 	input             chr_ex,         // chr_addr is from an extra sprite read if high
@@ -196,9 +198,9 @@ Mapper28 map28(
 //*****************************************************************************//
 // Name   : UNROM 512                                                          //
 // Mappers: 30                                                                 //
-// Status : No Self Flashing/Needs testing                                     //
+// Status : Self flashing except sector erase                                  //
 // Notes  : Homebrew mapper                                                    //
-// Games  : ?                                                                  //
+// Games  : More Glider                                                        //
 //*****************************************************************************//
 Mapper30 map30(
 	.clk        (clk),
@@ -668,16 +670,47 @@ Mapper41 map41(
 );
 
 //*****************************************************************************//
-// Name   : Mapper 42                                                          //
-// Mappers: 42                                                                 //
+// Name   : NTDEC 2722, Mapper42                                               //
+// Mappers: 40, 42                                                             //
 // Status : Not working                                                        //
 // Notes  : Used for converted FDS carts.                                      //
-// Games  : Love Warrior Nicol, Green Beret (unl)                              //
+// Games  : Super Mario Bros. 2 (LF36) Love Warrior Nicol, Green Beret (unl)   //
 //*****************************************************************************//
 Mapper42 map42(
 	.clk        (clk),
 	.ce         (ce),
-	.enable     (me[42]),
+	.enable     (me[40] | me[42]),
+	.flags      (flags),
+	.prg_ain    (prg_ain),
+	.prg_aout_b (prg_addr_b),
+	.prg_read   (prg_read),
+	.prg_write  (prg_write),
+	.prg_din    (prg_din),
+	.prg_dout_b (prg_dout_b),
+	.prg_allow_b(prg_allow_b),
+	.chr_ain    (chr_ain),
+	.chr_aout_b (chr_addr_b),
+	.chr_read   (chr_read),
+	.chr_allow_b(chr_allow_b),
+	.vram_a10_b (vram_a10_b),
+	.vram_ce_b  (vram_ce_b),
+	.irq_b      (irq_b),
+	.flags_out_b(flags_out_b),
+	.audio_in   (audio_in),
+	.audio_b    (audio_out_b)
+);
+
+//*****************************************************************************//
+// Name   : Kaiser KS202                                                       //
+// Mappers: 142                                                                //
+// Status : Needs evaluation                                                   //
+// Notes  : Used for converted FDS carts.                                      //
+// Games  : Bubble Bobble, Super Mario Bros. 2(j)                              //
+//*****************************************************************************//
+KS202 map142(
+	.clk        (clk),
+	.ce         (ce),
+	.enable     (me[142]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
 	.prg_aout_b (prg_addr_b),
@@ -736,14 +769,14 @@ Mapper65 map65(
 	.SaveStateBus_Dout (SaveStateBus_wired_or[29])
 );
 
-//*****************************************************************************//
-// Name   : GxROM                                                              //
-// Mappers: 11, 38, 46, 66, 86, 87, 101, 140                                       //
-// Status : 38/66 - Working, 38/87/101/140 - Needs eval, 86 - No Audio Samples //
-// Notes  :                                                                    //
-// Games  : Doraemon, Dragon Power, Sidewinder (145), Taiwan Mahjong 16 (149)  //
-//*****************************************************************************//
-wire mapper66_en = me[11] | me[38] | me[46] | me[86] | me[87] | me[101] | me[140] | me[66] | me[145] | me[149];
+//*********************************************************************************//
+// Name   : GxROM                                                                  //
+// Mappers: 11, 38, 46, 66, 86, 87, 101, 140, 144                                  //
+// Status : 38/66 - Working, 38/87/101/140/144 - Needs eval, 86 - No Audio Samples //
+// Notes  :                                                                        //
+// Games  : Doraemon, Dragon Power, Sidewinder (145), Taiwan Mahjong 16 (149)      //
+//*********************************************************************************//
+wire mapper66_en = me[11] | me[38] | me[46] | me[86] | me[87] | me[101] | me[140] | me[66] | me[144] | me[145] | me[149];
 Mapper66 map66(
 	.clk        (clk),
 	.ce         (ce),
@@ -1004,16 +1037,16 @@ Mapper77 map77(
 );
 
 //*****************************************************************************//
-// Name   : Holy Diver                                                         //
-// Mappers: 78, 70, 152                                                        //
-// Status : Needs testing overall                                             //
+// Name   : Holy Diver, NTDEC N715021                                          //
+// Mappers: 78, 70, 152, 81                                                    //
+// Status : Needs testing overall                                              //
 // Notes  : Submapper 1 Requires NES 2.0                                       //
-// Games  : Holy Diver, Uchuusent                                              //
+// Games  : Holy Diver, Uchuusent, Super Gun                                   //
 //*****************************************************************************//
 Mapper78 map78(
 	.clk        (clk),
 	.ce         (ce),
-	.enable     (me[152] | me[70] | me[78]),
+	.enable     (me[152] | me[70] | me[78] | me[81]),
 	.flags      (flags),
 	.prg_ain    (prg_ain),
 	.prg_aout_b (prg_addr_b),
@@ -1183,8 +1216,8 @@ Mapper107 map107(
 //*****************************************************************************//
 // Name   : GTROM                                                              //
 // Mappers: 111                                                                //
-// Status : Passes all tests except reflash test                               //
-// Notes  : No LED or self-reflash support                                     //
+// Status : Passes all tests except flash sector erase                         //
+// Notes  : No LED or flash sector erase                                       //
 // Games  : Super Homebrew War, Candelabra: Estoscerro, more homebrew          //
 //*****************************************************************************//
 Mapper111 map111(
@@ -2234,6 +2267,8 @@ NSF nsfplayer(
 					 audio_in),
 	.exp_audioe (exp_audioe),  // Expansion Enabled (0x0=None, 0x1=VRC6, 0x2=VRC7, 0x4=FDS, 0x8=MMC5, 0x10=N163, 0x20=SS5B
 	.audio_b    (audio_out_b),
+	// Special ports
+	.chr_write  (chr_write),
 	.fds_din    (fds_data)
 );
 
@@ -2381,7 +2416,12 @@ always @* begin
 	{diskside} = {fds_diskside};
 
 	// Behavior helper flags
-	{has_savestate, prg_conflict, prg_bus_write, has_chr_dout} = {flags_out_b[3], flags_out_b[2], flags_out_b[1], flags_out_b[0]};
+	has_chr_dout    = flags_out_b[0];
+	prg_bus_write   = flags_out_b[1];
+	prg_conflict    = flags_out_b[2];
+	has_savestate   = flags_out_b[3];
+	prg_conflict_d0 = flags_out_b[4];
+	has_flashsaves  = flags_out_b[5];
 
 	// Address translation for SDRAM
 	if ((prg_aout[21] == 1'b0) && (prg_aout[24] == 1'b0))

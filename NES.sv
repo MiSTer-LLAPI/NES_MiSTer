@@ -197,8 +197,8 @@ video_freak video_freak
 (
 	.*,
 	.VGA_DE_IN(vga_de),
-	.ARX((!ar) ? (hide_overscan ? 12'd64 : 12'd128) : (ar - 1'd1)),
-	.ARY((!ar) ? (hide_overscan ? 12'd49 : 12'd105) : 12'd0),
+	.ARX((!ar) ? (|hide_overscan ? (hide_overscan[1] ? 12'd4 : 12'd128) : 12'd64) : (ar - 1'd1)),
+	.ARY((!ar) ? (|hide_overscan ? (hide_overscan[1] ? 12'd3 : 12'd105) : 12'd49) : 12'd0),
 	.CROP_SIZE((en216p & vcrop_en) ? 10'd216 : 10'd0),
 	.CROP_OFF(voff),
 	.SCALE(status[40:39])
@@ -256,8 +256,7 @@ parameter CONF_STR = {
 	"d6P1O5,Vertical Crop,Disabled,216p(5x);",
 	"d6P1o36,Crop Offset,0,2,4,8,10,12,-12,-10,-8,-6,-4,-2;",
 	"P1o78,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
-	"P1-;",
-	"P1O4,Hide Overscan,Off,On;",
+	"P1O[68:67],Overscan,Normal,Vertical Overscan,Borders,Everything;",
 	"P1ORS,Mask Edges,Off,Left,Both,Auto;",
 	"P1OP,Extra Sprites,Off,On;",
 	"P1-;",
@@ -280,8 +279,11 @@ parameter CONF_STR = {
 	"P3o9,Pause when OSD is open,Off,On;",
 	"P4,Advanced;",
 	"P4-;",
+	"P4O[66:65],RAM Clear,No,$00,$FF,Random;",
+	"P4O[64],PPU Reset Behavior,Famicom,NES;",
 	"P4OQ,Video Dijitter,Enabled,Disabled;",
-	"- ;",
+	"P4O[69],Debug Dots,Off,On;",
+	"-  ;",
 	"R0,Reset;",
 	"J1,A,B,Select,Start,FDS,Mic,Zapper/Vaus Btn,PP/Mat 1,PP/Mat 2,PP/Mat 3,PP/Mat 4,PP/Mat 5,PP/Mat 6,PP/Mat 7,PP/Mat 8,PP/Mat 9,PP/Mat 10,PP/Mat 11,PP/Mat 12,Savestates;",
 	"jn,A,B,Select,Start,L,,R|P;",
@@ -312,11 +314,11 @@ wire [23:0] joyA_unmod;
 wire [10:0] ps2_key;
 wire [1:0] buttons;
 
-wire [63:0] status;
+wire [127:0] status;
 
 wire arm_reset = status[0];
 wire pal_video = |status[24:23];
-wire hide_overscan = status[4] && ~pal_video;
+wire [1:0] hide_overscan = status[68:67];
 wire [3:0] palette2_osd = status[49:47];
 wire joy_swap = status[9] ^ (raw_serial || piano); // Controller on port 2 for Miracle Piano/SNAC
 wire fds_auto_eject = ~status[16];
@@ -328,8 +330,13 @@ wire int_audio = ~status[31];
 reg type_bios, type_fds, type_gg, type_nsf, type_nes, type_palette, is_bios, downloading;
 reg [24:0] rom_sz;
 
+wire [7:0] random_byte = q[7:0];
+wire feedback = q[31]^q[29]^q[28]^ q[27]^ q[23]^q[20]^ q[19]^q[17]^ q[15]^q[14]^q[12]^ q[11]^q[9]^ q[4]^ q[3]^q[2];
+reg [31:0] q = 32'haaaaaaaa;
+
 always_ff @(posedge clk) begin
 	reg old_downld;
+	q <= {q[30:0], feedback} ;
 
 	old_downld <= downloading;
 	loader_reset <= !download_reset || (~old_downld && downloading);
@@ -988,10 +995,14 @@ wire piano = (mapper_flags[30]);
 wire [3:0] prg_nvram = mapper_flags[34:31];
 wire loader_busy, loader_done, loader_fail;
 wire [9:0] prg_mask, chr_mask;
+wire [1:0] clearval = status[66:65];
+wire [7:0] cleardata = (clearval == 3) ? random_byte : (clearval == 2 ? 8'hFF : 8'h00);
 
 GameLoader loader
 (
 	.clk              ( clk               ),
+	.clearval         ( |clearval         ),
+	.cleardata        ( cleardata         ),
 	.reset            ( loader_reset      ),
 	.downloading      ( downloading       ),
 	.filetype         ( {4'b0000, type_nsf, type_fds, type_nes, type_bios} ),
@@ -1074,12 +1085,16 @@ always_ff @(posedge clk) begin
 	end
 end
 
+wire nes_hblank, nes_hsync, nes_vsync, nes_vblank;
+
 NES nes (
 	.clk             (clk),
 	.reset_nes       (reset_nes),
+	.ppu_rst_behavior(status[64]),
 	.cold_reset      (downloading & (type_fds | type_nes)),
 	.pausecore       (pausecore),
 	.corepaused      (corepaused),
+	.debug_dots	     (status[69]),
 	.sys_type        (status[24:23]),
 	.nes_div         (nes_ce),
 	.mapper_flags    (downloading ? 64'd0 : mapper_flags),
@@ -1096,11 +1111,15 @@ NES nes (
 	// Video
 	.ex_sprites      (status[25]),
 	.color           (color),
+	.hsync           (nes_hsync),
+	.hblank          (nes_hblank),
+	.vsync           (nes_vsync),
+	.vblank          (nes_vblank),
 	.emphasis        (emphasis),
 	.cycle           (cycle),
 	.scanline        (scanline),
-	.mask            (status[28:27]),
-	.dejitter_timing(status[26]),
+	.mask            (hide_overscan[1] ? 2'b00 : status[28:27]),
+	.dejitter_timing (status[26]),
 	// User Input
 	.joypad_out      (joypad_out),
 	.joypad_clock    (joypad_clock),
@@ -1136,6 +1155,7 @@ NES nes (
 	.bram_write      (bram_write),
 	.bram_override   (bram_en),
 	.save_written    (save_written),
+	.mapper_has_flashsaves (mapper_has_flashsaves),
 
 	// savestates
 	.mapper_has_savestate    (mapper_has_savestate),
@@ -1230,7 +1250,9 @@ always @(posedge clk) begin
 	end
 end
 
-wire [24:0] ch2_addr = sleep_savestate ? Savestate_SDRAMAddr      : {7'b0001111, save_addr};
+wire [24:0] ch2_addr = sleep_savestate ? Savestate_SDRAMAddr :
+                       mapper_has_flashsaves ? {6'b000000, save_addr} : // PRG-ROM
+                       {7'b0001111, save_addr[17:0]};                   // CARTRAM
 wire        ch2_wr   = sleep_savestate ? Savestate_SDRAMWrEn      : save_wr;
 wire  [7:0] ch2_din  = sleep_savestate ? Savestate_SDRAMWriteData : sd_buff_dout;
 wire        ch2_rd   = sleep_savestate ? Savestate_SDRAMRdEn      : save_rd;
@@ -1296,7 +1318,7 @@ dpram #(" ", 11) eeprom
 wire save_busy;
 reg save_rd, save_wr;
 reg save_wait;
-reg [17:0] save_addr;
+reg [18:0] save_addr;
 
 always @(posedge clk) begin
 
@@ -1307,14 +1329,14 @@ always @(posedge clk) begin
 		save_wait <= 0;
 	end
 	else if(sd_ack & ~save_busy ) begin
-		if(~bk_loading && (save_addr != {sd_lba[8:0], sd_buff_addr})) begin
+		if(~bk_loading && (save_addr != {sd_lba[9:0], sd_buff_addr})) begin
 			save_rd <= 1;
-			save_addr <= {sd_lba[8:0], sd_buff_addr};
+			save_addr <= {sd_lba[9:0], sd_buff_addr};
 			save_wait <= 1;
 		end
 		if(bk_loading && sd_buff_wr) begin
 			save_wr <= 1;
-			save_addr <= {sd_lba[8:0], sd_buff_addr};
+			save_addr <= {sd_lba[9:0], sd_buff_addr};
 			save_wait <= 1;
 		end
 	end
@@ -1322,9 +1344,9 @@ always @(posedge clk) begin
 end
 
 reg bk_pending;
-wire save_written;
+wire save_written, mapper_has_flashsaves;
 always @(posedge clk) begin
-	if ((mapper_flags[25] || fds) && ~OSD_STATUS && save_written)
+	if ((mapper_flags[25] || fds || mapper_has_flashsaves) && ~OSD_STATUS && save_written)
 		bk_pending <= 1'b1;
 	else if (bk_state)
 		bk_pending <= 1'b0;
@@ -1385,10 +1407,15 @@ video video
 	.clk(clk),
 	.reset(reset_nes),
 	.cnt(nes_ce_video),
+	.sys_type(status[24:23]),
+	.nes_hsync(nes_hsync),
+	.nes_hblank(nes_hblank),
+	.nes_vsync(nes_vsync),
+	.nes_vblank(nes_vblank),
 	.hold_reset(hold_reset),
 	.count_v(scanline),
 	.count_h(cycle),
-	.hide_overscan(hide_overscan),
+	.hide_overscan(pal_video && ~|hide_overscan ? 2'b01 : hide_overscan),
 	.palette(palette2_osd),
 	.load_color(pal_write && ioctl_download),
 	.load_color_data(pal_color),
@@ -1468,7 +1495,10 @@ reg  bk_request = 0;
 wire bk_busy = (bk_state == S_COPY);
 reg  fds_busy;
 
-wire [8:0] save_sz = fds ? rom_sz[17:9] : bram_en ? 9'd3 : (prg_nvram == 4'd7) ? 9'd15 : 9'd63;
+wire [10:0] save_sz = fds ? rom_sz[17:9] :
+                      bram_en ? 11'd3 :
+                      mapper_has_flashsaves ? (11'd32 << mapper_flags[10:8]) : // 512KB max atm
+                      (prg_nvram == 4'd7) ? 11'd15 : 11'd63;
 
 typedef enum bit [1:0] { S_IDLE, S_COPY } mystate;
 mystate bk_state = S_IDLE;
@@ -1507,7 +1537,7 @@ always @(posedge clk) begin : save_block
 		end
 	end else begin
 		if(old_ack & ~sd_ack) begin
-			if(sd_lba[8:0] == save_sz) begin
+			if(sd_lba == save_sz) begin
 				bk_loading <= 0;
 				bk_state <= S_IDLE;
 			end else begin
@@ -1576,6 +1606,7 @@ wire statusUpdate;
 //wire [10:0] ps2_key_adjust = skip_ps2 && fkeyb ? 'h0 : ps2_key[10:0];
 //END LLAPI
 
+
 savestate_ui savestate_ui
 (
 	.clk            (clk           ),
@@ -1615,6 +1646,8 @@ module GameLoader
 	input         is_bios,
 	input   [7:0] indata,
 	input         indata_clk,
+	input         clearval,
+	input   [7:0] cleardata,
 	output reg [24:0] mem_addr,
 	output [7:0]  mem_data,
 	output        mem_write,
@@ -1641,7 +1674,7 @@ wire [7:0] chrrom = ines[5];	// Number of 8192 byte character ROM pages (0 indic
 wire [3:0] chrram = ines[11][3:0]; // NES 2.0 CHR-RAM size shift count (64 << count)
 wire has_chr_ram = ~is_nes20 ? (chrrom == 0) : |chrram;
 
-assign mem_data = (state == S_CLEARRAM || (~copybios && state == S_COPYBIOS)) ? 8'h00 : indata;
+assign mem_data = (state == S_CLEARRAM || (~copybios && state == S_COPYBIOS)) ? (clearval && ~(state == S_COPYBIOS) ? (mapper == 8'd232 ? 8'h00 : cleardata) : 8'h00) : indata;
 assign mem_write = (((bytes_left != 0) && (state == S_LOADPRG || state == S_LOADCHR || state == S_LOADEXTRA)
 	|| (downloading && (state == S_LOADHEADER || state == S_LOADFDS || state == S_LOADNSFH || state == S_LOADNSFD))) && indata_clk)
 	|| ((bytes_left != 0) && ((state == S_CLEARRAM) || (state == S_COPYBIOS) || (state == S_COPYPLAY)) && clearclk == 4'h2);
@@ -1813,6 +1846,12 @@ always @(posedge clk) begin
 			end else if (mapper == 8'd232) begin
 				mem_addr <= 25'b0_0011_1000_0000_0111_1111_1110; // Quattro - Clear these two RAM address to restart game menu
 				bytes_left <= 21'h2;
+				state <= S_CLEARRAM;
+				clearclk <= 4'h0;
+				cleardone <= 1;
+			end else if (clearval) begin
+				mem_addr <= 25'b0_0011_0000_0000_0000_0000_0000;
+				bytes_left <= 21'hF_FFFF;
 				state <= S_CLEARRAM;
 				clearclk <= 4'h0;
 				cleardone <= 1;
